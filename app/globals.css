@@ -38,8 +38,176 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-.maplibregl-popup-content {
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
+.merchant-place-popup.maplibregl-popup {
+  z-index: 20;
+}
+
+.merchant-place-popup .maplibregl-popup-content {
+  border-radius: 1rem;
+  padding: 0;
   font-size: 0.875rem;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.08),
+    0 12px 28px -4px rgba(0, 0, 0, 0.12);
+}
+
+.merchant-place-popup .maplibregl-popup-close-button {
+  font-size: 1.125rem;
+  padding: 0.375rem 0.5rem;
+  color: #71717a;
+  border-radius: 9999px;
+  right: 0.375rem;
+  top: 0.375rem;
+}
+
+.merchant-place-popup .maplibregl-popup-close-button:hover {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
+.merchant-place-popup .maplibregl-popup-tip {
+  border-top-color: #ffffff;
+}
+
+.place-popup {
+  padding: 1.125rem 1.25rem 1.25rem;
+}
+
+.place-popup-name {
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 0 0 0.5rem;
+  padding-right: 1.25rem;
+}
+
+.place-popup-location {
+  margin: 0 0 0.875rem;
+  color: #71717a;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.place-popup-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.875rem;
+}
+
+.place-popup-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.place-popup-pill-multiplier {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.place-popup-pill-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.place-popup-pill-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.place-popup-pill-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.place-popup-pill-muted {
+  background: #f4f4f5;
+  color: #52525b;
+}
+
+.place-popup-footer {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #a1a1aa;
+  text-align: center;
+}
+
+.place-popup-report-link {
+  margin-left: 0.25rem;
+  font-weight: 500;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.place-popup-report-link:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-color-scheme: dark) {
+  .merchant-place-popup .maplibregl-popup-content {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: #18181b;
+  }
+
+  .merchant-place-popup .maplibregl-popup-tip {
+    border-top-color: #18181b;
+  }
+
+  .place-popup-name {
+    color: #fafafa;
+  }
+
+  .place-popup-location {
+    color: #a1a1aa;
+  }
+
+  .place-popup-pill-multiplier {
+    background: #1e3a8a;
+    color: #dbeafe;
+  }
+
+  .place-popup-pill-success {
+    background: #064e3b;
+    color: #a7f3d0;
+  }
+
+  .place-popup-pill-warning {
+    background: #78350f;
+    color: #fde68a;
+  }
+
+  .place-popup-pill-danger {
+    background: #7f1d1d;
+    color: #fecaca;
+  }
+
+  .place-popup-pill-muted {
+    background: #27272a;
+    color: #a1a1aa;
+  }
+
+  .place-popup-footer {
+    color: #71717a;
+  }
+
+  .place-popup-report-link {
+    color: #60a5fa;
+  }
+
+  .merchant-place-popup .maplibregl-popup-close-button {
+    color: #a1a1aa;
+  }
+
+  .merchant-place-popup .maplibregl-popup-close-button:hover {
+    background: #27272a;
+    color: #fafafa;
+  }
 }

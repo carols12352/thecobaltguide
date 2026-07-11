@@ -34,6 +34,7 @@ export default function HomePage() {
   const [searchResults, setSearchResults] = useState<MapPlace[] | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [listOpen, setListOpen] = useState(false);
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
 
   const listPlaces = searchResults ?? viewportPlaces;
   const isSearchMode = searchResults !== null;
@@ -42,9 +43,15 @@ export default function HomePage() {
     (places: MapPlace[], meta: MapViewportMeta) => {
       setViewportPlaces(sortPlacesByDistance(places, meta.center));
       setSearchResults(null);
+      setSelectedPlaceId(null);
     },
     [],
   );
+
+  function handlePlaceSelect(place: MapPlace) {
+    setSelectedPlaceId(place.id);
+    setListOpen(true);
+  }
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -86,7 +93,12 @@ export default function HomePage() {
 
       <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 lg:flex-row">
         <div className="relative h-[50vh] lg:h-[calc(100vh-12rem)] lg:flex-1">
-          <MerchantMap filters={filters} onPlacesLoaded={handlePlacesLoaded} />
+          <MerchantMap
+            filters={filters}
+            selectedPlaceId={selectedPlaceId}
+            onPlaceSelect={handlePlaceSelect}
+            onPlacesLoaded={handlePlacesLoaded}
+          />
           <Button
             type="button"
             variant="outline"
@@ -113,7 +125,12 @@ export default function HomePage() {
               : `${listPlaces.length} places in view`}
           </h2>
           {listPlaces.map((place) => (
-            <PlaceCard key={place.id} place={place} />
+            <PlaceCard
+              key={place.id}
+              place={place}
+              selected={place.id === selectedPlaceId}
+              onSelect={handlePlaceSelect}
+            />
           ))}
           {listPlaces.length === 0 && (
             <p className="text-sm text-zinc-500">

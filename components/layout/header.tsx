@@ -17,7 +17,7 @@ export function Header() {
             href="/submit"
             className="hidden text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline"
           >
-            Submit Report
+            Add Merchant
           </Link>
           <Link
             href="/account"
@@ -26,7 +26,7 @@ export function Header() {
             Account
           </Link>
           <Link href="/submit">
-            <Button size="sm">Report 5x</Button>
+            <Button size="sm">Add Merchant</Button>
           </Link>
         </nav>
       </div>

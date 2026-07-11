@@ -6,6 +6,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_DEFAULTS } from "@/config/constants";
 import { DEFAULT_CENTER, getMapStyleUrl } from "@/lib/map/config";
 import { registerPoiIconFallback } from "@/lib/map/poi-icon-fallback";
+import {
+  placeFromGeoJsonFeature,
+  showPlacePopup,
+} from "@/lib/map/place-popup";
 import type { MapPlace } from "@/types/domain";
 import type { MapFilters } from "@/components/filters/map-filters";
 
@@ -21,6 +25,8 @@ export interface MapViewportMeta {
 
 interface MerchantMapProps {
   filters: MapFilters;
+  selectedPlaceId?: string | null;
+  onPlaceSelect?: (place: MapPlace) => void;
   onPlacesLoaded?: (places: MapPlace[], meta: MapViewportMeta) => void;
 }
 
@@ -36,14 +42,21 @@ function placesToGeoJSON(places: MapPlace[]): GeoJSON.FeatureCollection {
       properties: {
         id: place.id,
         name: place.name,
+        city: place.city ?? "",
+        province: place.province ?? "",
         multiplier: place.multiplier ?? "?",
+        confidenceLevel: place.confidenceLevel,
         recentReportCount: place.recentReportCount,
       },
     })),
   };
 }
 
-function setupPlaceLayers(map: maplibregl.Map) {
+function setupPlaceLayers(
+  map: maplibregl.Map,
+  popupRef: { current: maplibregl.Popup | null },
+  onPlaceSelectRef: { current: ((place: MapPlace) => void) | undefined },
+) {
   if (map.getSource(SOURCE_ID)) return;
 
   map.addSource(SOURCE_ID, {
@@ -123,8 +136,13 @@ function setupPlaceLayers(map: maplibregl.Map) {
 
   map.on("click", UNCLUSTERED_LAYER, (event) => {
     const feature = event.features?.[0];
-    const placeId = feature?.properties?.id;
-    if (placeId) window.location.href = `/place/${placeId}`;
+    if (!feature) return;
+
+    const place = placeFromGeoJsonFeature(feature);
+    if (place) {
+      showPlacePopup(map, place, popupRef);
+      onPlaceSelectRef.current?.(place);
+    }
   });
 
   map.on("mouseenter", CLUSTER_LAYER, () => {
@@ -146,15 +164,21 @@ function updatePlacesSource(map: maplibregl.Map, places: MapPlace[]) {
   source?.setData(placesToGeoJSON(places));
 }
 
-export function MerchantMap({ filters, onPlacesLoaded }: MerchantMapProps) {
+export function MerchantMap(props: MerchantMapProps) {
+  const { filters, selectedPlaceId, onPlacesLoaded } = props;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const popupRef = useRef<maplibregl.Popup | null>(null);
+  const placesRef = useRef<MapPlace[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onPlacesLoadedRef = useRef(onPlacesLoaded);
+  const onPlaceSelectRef = useRef(props.onPlaceSelect);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   onPlacesLoadedRef.current = onPlacesLoaded;
+  onPlaceSelectRef.current = props.onPlaceSelect;
 
   const fetchPlaces = useCallback(async (map: maplibregl.Map) => {
     const bounds = map.getBounds();
@@ -177,6 +201,7 @@ export function MerchantMap({ filters, onPlacesLoaded }: MerchantMapProps) {
       const res = await fetch(`/api/places/map?${params}`);
       if (!res.ok) throw new Error("Failed to load places");
       const data = await res.json();
+      placesRef.current = data.places;
       updatePlacesSource(map, data.places);
       onPlacesLoadedRef.current?.(data.places, {
         center: { latitude: center.lat, longitude: center.lng },
@@ -211,7 +236,7 @@ export function MerchantMap({ filters, onPlacesLoaded }: MerchantMapProps) {
     );
 
     map.on("load", () => {
-      setupPlaceLayers(map);
+      setupPlaceLayers(map, popupRef, onPlaceSelectRef);
       fetchPlaces(map);
     });
 
@@ -226,6 +251,7 @@ export function MerchantMap({ filters, onPlacesLoaded }: MerchantMapProps) {
     mapRef.current = map;
 
     return () => {
+      popupRef.current?.remove();
       map.remove();
       mapRef.current = null;
     };
@@ -236,6 +262,20 @@ export function MerchantMap({ filters, onPlacesLoaded }: MerchantMapProps) {
       fetchPlaces(mapRef.current);
     }
   }, [filters, fetchPlaces]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedPlaceId) return;
+
+    const place = placesRef.current.find((p) => p.id === selectedPlaceId);
+    if (!place) return;
+
+    map.easeTo({
+      center: [place.longitude, place.latitude],
+      zoom: Math.max(map.getZoom(), 15),
+    });
+    showPlacePopup(map, place, popupRef);
+  }, [selectedPlaceId]);
 
   return (
     <div className="relative h-full w-full">
