@@ -126,3 +126,15 @@ export interface AggregationResult {
   score3x: number;
   score5x: number;
 }
+
+export interface GeocodingResult {
+  name: string;
+  addressLine1: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+  externalPlaceId: string;
+}

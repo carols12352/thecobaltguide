@@ -1,28 +1,38 @@
-export interface GeocodingResult {
-  name: string;
-  addressLine1: string;
-  city: string;
-  province: string;
-  postalCode: string;
-  countryCode: string;
-  latitude: number;
-  longitude: number;
-  externalPlaceId: string;
-}
+import type { GeocodingResult } from "@/types/domain";
 
-/**
- * Geocoding service — calls external provider (Mapbox / Google Places).
- * Requires MAPBOX_ACCESS_TOKEN or GOOGLE_PLACES_API_KEY in environment.
- */
 export class GeocodingService {
   async searchAddress(query: string): Promise<GeocodingResult[]> {
     const token = process.env.MAPBOX_ACCESS_TOKEN;
-    if (!token) {
-      throw new GeocodingNotConfiguredError(
-        "MAPBOX_ACCESS_TOKEN is not configured",
-      );
+    if (token) {
+      return this.searchMapbox(query, token);
     }
 
+    return this.searchNominatim(query);
+  }
+
+  async geocodeStructuredAddress(input: {
+    name?: string;
+    addressLine1: string;
+    city: string;
+    province: string;
+    postalCode: string;
+  }): Promise<GeocodingResult[]> {
+    const parts = [
+      input.name,
+      input.addressLine1,
+      input.city,
+      input.province,
+      input.postalCode,
+      "Canada",
+    ].filter(Boolean);
+
+    return this.searchAddress(parts.join(", "));
+  }
+
+  private async searchMapbox(
+    query: string,
+    token: string,
+  ): Promise<GeocodingResult[]> {
     const url = new URL(
       `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json`,
     );
@@ -65,6 +75,59 @@ export class GeocodingService {
         };
       },
     );
+  }
+
+  private async searchNominatim(query: string): Promise<GeocodingResult[]> {
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("limit", "5");
+    url.searchParams.set("countrycodes", "ca");
+    url.searchParams.set("addressdetails", "1");
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        "User-Agent": "CobaltMerchantMap/1.0 (merchant submit geocoding)",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Geocoding request failed: ${response.status}`);
+    }
+
+    const results = (await response.json()) as Array<{
+      lat: string;
+      lon: string;
+      display_name: string;
+      address?: {
+        road?: string;
+        house_number?: string;
+        city?: string;
+        town?: string;
+        village?: string;
+        state?: string;
+        postcode?: string;
+      };
+    }>;
+
+    return results.map((hit, index) => {
+      const address = hit.address ?? {};
+      const street = [address.house_number, address.road].filter(Boolean).join(" ");
+      const city =
+        address.city ?? address.town ?? address.village ?? "";
+
+      return {
+        name: street || hit.display_name.split(",")[0] || "Location",
+        addressLine1: street || hit.display_name.split(",")[0] || "",
+        city,
+        province: address.state ?? "",
+        postalCode: address.postcode ?? "",
+        countryCode: "CA",
+        latitude: parseFloat(hit.lat),
+        longitude: parseFloat(hit.lon),
+        externalPlaceId: `nominatim:${index}:${hit.lat},${hit.lon}`,
+      };
+    });
   }
 }
 

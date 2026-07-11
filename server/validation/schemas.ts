@@ -23,6 +23,14 @@ export const searchQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(50).default(20),
 });
 
+export const geocodeQuerySchema = z.object({
+  name: z.string().max(200).optional(),
+  addressLine1: z.string().min(1).max(300),
+  city: z.string().min(1).max(100),
+  province: z.string().min(1).max(100),
+  postalCode: z.string().min(1).max(20),
+});
+
 export const createPlaceSchema = z.object({
   name: z.string().min(1).max(200),
   addressLine1: z.string().min(1).max(300),
