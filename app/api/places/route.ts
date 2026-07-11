@@ -1,0 +1,51 @@
+import {
+  jsonCreated,
+  jsonError,
+  jsonOk,
+  jsonRateLimited,
+  jsonUnauthorized,
+  jsonValidationError,
+} from "@/lib/api/response";
+import { AuthError, requireAuth } from "@/lib/auth/session";
+import {
+  checkIpWriteRateLimit,
+  checkUserPlaceRateLimit,
+  getClientIp,
+} from "@/lib/rate-limit";
+import { captureException } from "@/lib/monitoring/sentry";
+import { placeService } from "@/server/services/place-service";
+import { createPlaceSchema } from "@/server/validation/schemas";
+
+export async function POST(request: Request) {
+  try {
+    const user = await requireAuth();
+    const ip = getClientIp(request);
+
+    const ipLimit = checkIpWriteRateLimit(ip);
+    if (!ipLimit.allowed) return jsonRateLimited(ipLimit.resetAt);
+
+    const placeLimit = checkUserPlaceRateLimit(user.id);
+    if (!placeLimit.allowed) return jsonRateLimited(placeLimit.resetAt);
+
+    const body = await request.json();
+    const parsed = createPlaceSchema.safeParse(body);
+    if (!parsed.success) {
+      return jsonValidationError(parsed.error.flatten());
+    }
+
+    const result = await placeService.createPlace(parsed.data, user.id);
+
+    if (!result.created) {
+      return jsonOk({
+        created: false,
+        possibleDuplicates: result.possibleDuplicates,
+      });
+    }
+
+    return jsonCreated({ created: true, placeId: result.place.id });
+  } catch (error) {
+    if (error instanceof AuthError) return jsonUnauthorized(error.message);
+    captureException(error, { route: "POST /api/places" });
+    return jsonError("Failed to create place", 500);
+  }
+}
