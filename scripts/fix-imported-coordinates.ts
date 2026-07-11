@@ -5,12 +5,20 @@
 
 import { readFileSync, existsSync } from "fs";
 import path from "path";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { spreadCoordinates } from "../lib/map/spread-coordinates";
 import { parseGeoLocation } from "../lib/map/parse-location";
 import { REWARDS_CANADA_EXTERNAL_PREFIX } from "../lib/import/rewards-canada";
 
 const PAGE_SIZE = 500;
+
+type ScriptSupabase = SupabaseClient<any, "public", "public", any, any>;
+
+interface ImportedPlaceRow {
+  id: string;
+  external_place_id: string | null;
+  location: unknown;
+}
 
 function loadEnv() {
   const envPath = path.join(process.cwd(), ".env.local");
@@ -26,10 +34,7 @@ function loadEnv() {
   }
 }
 
-async function fetchImportedPlaces(
-  supabase: ReturnType<typeof createClient>,
-  from: number,
-) {
+async function fetchImportedPlaces(supabase: ScriptSupabase, from: number) {
   return supabase
     .from("places")
     .select("id, external_place_id, location")
@@ -40,7 +45,7 @@ async function fetchImportedPlaces(
 
 async function main() {
   loadEnv();
-  const supabase = createClient(
+  const supabase: ScriptSupabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } },
@@ -52,9 +57,11 @@ async function main() {
   let from = 0;
 
   while (true) {
-    const { data: places, error } = await fetchImportedPlaces(supabase, from);
+    const { data, error } = await fetchImportedPlaces(supabase, from);
     if (error) throw error;
-    if (!places?.length) break;
+
+    const places = (data ?? []) as ImportedPlaceRow[];
+    if (!places.length) break;
 
     for (const place of places) {
       processed++;
