@@ -33,8 +33,10 @@ export default function HomePage() {
   const [viewportPlaces, setViewportPlaces] = useState<MapPlace[]>([]);
   const [searchResults, setSearchResults] = useState<MapPlace[] | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
-  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [selectedPlace, setSelectedPlace] = useState<MapPlace | null>(null);
 
   const listPlaces = searchResults ?? viewportPlaces;
   const isSearchMode = searchResults !== null;
@@ -42,29 +44,49 @@ export default function HomePage() {
   const handlePlacesLoaded = useCallback(
     (places: MapPlace[], meta: MapViewportMeta) => {
       setViewportPlaces(sortPlacesByDistance(places, meta.center));
-      setSearchResults(null);
-      setSelectedPlaceId(null);
     },
     [],
   );
 
   function handlePlaceSelect(place: MapPlace) {
-    setSelectedPlaceId(place.id);
-    setListOpen(true);
+    setSelectedPlace(place);
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      setListOpen(false);
+    }
   }
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
+    setSearchError(null);
+
     if (!searchQuery.trim()) {
       setSearchResults(null);
+      setSelectedPlace(null);
       return;
     }
-    const res = await fetch(
-      `/api/places/search?q=${encodeURIComponent(searchQuery)}`,
-    );
-    const data = await res.json();
-    setSearchResults(data.places ?? []);
-    setListOpen(true);
+
+    setSearchLoading(true);
+    try {
+      const res = await fetch(
+        `/api/places/search?q=${encodeURIComponent(searchQuery)}`,
+      );
+      if (!res.ok) throw new Error("Search failed");
+      const data = await res.json();
+      setSearchResults(data.places ?? []);
+      setSelectedPlace(null);
+      setListOpen(true);
+    } catch {
+      setSearchError("Search failed. Please try again.");
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  function clearSearch() {
+    setSearchQuery("");
+    setSearchResults(null);
+    setSearchError(null);
+    setSelectedPlace(null);
   }
 
   return (
@@ -82,10 +104,22 @@ export default function HomePage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search merchants…"
+              aria-label="Search merchants"
               className="w-64"
             />
+            <Button type="submit" disabled={searchLoading}>
+              {searchLoading ? "Searching…" : "Search"}
+            </Button>
+            {isSearchMode && (
+              <Button type="button" variant="outline" onClick={clearSearch}>
+                Clear
+              </Button>
+            )}
           </form>
         </div>
+        {searchError && (
+          <p className="mx-auto mt-2 max-w-7xl text-sm text-red-600">{searchError}</p>
+        )}
         <div className="mx-auto mt-4 max-w-7xl">
           <MapFiltersBar filters={filters} onChange={setFilters} />
         </div>
@@ -95,7 +129,7 @@ export default function HomePage() {
         <div className="relative h-[50vh] lg:h-[calc(100vh-12rem)] lg:flex-1">
           <MerchantMap
             filters={filters}
-            selectedPlaceId={selectedPlaceId}
+            selectedPlace={selectedPlace}
             onPlaceSelect={handlePlaceSelect}
             onPlacesLoaded={handlePlacesLoaded}
           />
@@ -128,7 +162,7 @@ export default function HomePage() {
             <PlaceCard
               key={place.id}
               place={place}
-              selected={place.id === selectedPlaceId}
+              selected={place.id === selectedPlace?.id}
               onSelect={handlePlaceSelect}
             />
           ))}

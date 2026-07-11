@@ -18,6 +18,13 @@ export function distanceMetres(
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Animation duration in ms from distance: near 0.5s, mid 1s, far 2s (max). */
+export function getTransitionDurationMs(distanceMetres: number): number {
+  if (distanceMetres <= 2_000) return 500;
+  if (distanceMetres <= 10_000) return 1_000;
+  return 2_000;
+}
+
 export function sortPlacesByDistance(
   places: MapPlace[],
   center: { latitude: number; longitude: number },

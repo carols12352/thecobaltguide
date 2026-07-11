@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function Header() {
   return (
@@ -14,19 +14,18 @@ export function Header() {
 
         <nav className="flex items-center gap-2">
           <Link
-            href="/submit"
-            className="hidden text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline"
-          >
-            Add Merchant
-          </Link>
-          <Link
             href="/account"
-            className="hidden text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 sm:inline"
+            className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
           >
             Account
           </Link>
-          <Link href="/submit">
-            <Button size="sm">Add Merchant</Button>
+          <Link
+            href="/submit"
+            className={cn(
+              "inline-flex h-8 items-center justify-center rounded-lg bg-cobalt-600 px-3 text-sm font-medium text-white transition-colors hover:bg-cobalt-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cobalt-500",
+            )}
+          >
+            Add Merchant
           </Link>
         </nav>
       </div>
