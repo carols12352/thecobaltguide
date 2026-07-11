@@ -18,9 +18,10 @@ export const MAP_DEFAULTS = {
 } as const;
 
 export const CACHE_DURATIONS = {
-  placeDetailsSeconds: 600,
-  mapRegionSeconds: 120,
-  brandCategorySeconds: 3600,
+  placeDetailsSeconds: 86400,
+  mapRegionSeconds: 86400,
+  searchSeconds: 300,
+  brandCategorySeconds: 86400,
 } as const;
 
 export const DUPLICATE_DETECTION = {

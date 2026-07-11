@@ -1,6 +1,7 @@
 import { placeRepository } from "@/server/repositories/place-repository";
 import { flagRepository, userRepository } from "@/server/repositories/flag-repository";
 import { reportRepository } from "@/server/repositories/report-repository";
+import { invalidatePlaceReadCaches } from "@/lib/cache/place-cache";
 import { summaryService } from "@/server/services/summary-service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CreateFlagInput } from "@/server/validation/schemas";
@@ -23,6 +24,7 @@ export class ModerationService {
     );
 
     await summaryService.refreshPlaceSummary(report.placeId, report.cardProductId);
+    await invalidatePlaceReadCaches(report.placeId);
     await this.logAction(moderatorId, "multiplier_report", reportId, status, moderationReason);
 
     return report;
@@ -67,6 +69,7 @@ export class ModerationService {
       .single();
 
     if (error) throw error;
+    await invalidatePlaceReadCaches(placeId);
     await this.logAction(moderatorId, "place", placeId, "update");
     return data;
   }
@@ -91,6 +94,8 @@ export class ModerationService {
 
     const cardProductId = await placeRepository.getDefaultCardProductId();
     await summaryService.refreshPlaceSummary(targetPlaceId, cardProductId);
+    await invalidatePlaceReadCaches(targetPlaceId);
+    await invalidatePlaceReadCaches(sourcePlaceId);
 
     await this.logAction(moderatorId, "place", sourcePlaceId, "merge", reason, {
       targetPlaceId,

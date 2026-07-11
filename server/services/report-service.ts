@@ -1,5 +1,6 @@
 import { placeRepository } from "@/server/repositories/place-repository";
 import { reportRepository } from "@/server/repositories/report-repository";
+import { invalidatePlaceReadCaches } from "@/lib/cache/place-cache";
 import { summaryService } from "@/server/services/summary-service";
 import type { CreateReportInput } from "@/server/validation/schemas";
 
@@ -28,6 +29,7 @@ export class ReportService {
     );
 
     await summaryService.refreshPlaceSummary(placeId, cardProductId);
+    await invalidatePlaceReadCaches(placeId);
 
     return report;
   }
@@ -35,6 +37,8 @@ export class ReportService {
   async deleteOwnReport(reportId: string, userId: string) {
     const report = await reportRepository.softDelete(reportId, userId);
     await summaryService.refreshPlaceSummary(report.placeId, report.cardProductId);
+    await invalidatePlaceReadCaches(report.placeId);
+
     return report;
   }
 }
