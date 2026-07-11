@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 data/geocode-cache.json
+data/rewards-canada/cobaltcanada.json
 *.pem
 
 # debug
