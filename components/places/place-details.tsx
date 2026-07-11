@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { getCategoryLabel } from "@/config/categories";
-import { formatConfidence, formatDate, formatMultiplier } from "@/lib/utils";
+import { formatConfidence, formatDate, formatMultiplier, formatPlaceAddress } from "@/lib/utils";
 import type { PlaceDetail } from "@/types/domain";
 
 const PAYMENT_CONTEXTS = [
@@ -25,10 +25,7 @@ export function PlaceDetails({ place }: { place: PlaceDetail }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">{place.name}</h1>
-        <p className="mt-1 text-zinc-600">
-          {place.addressLine1}, {place.city}, {place.province}{" "}
-          {place.postalCode}
-        </p>
+        <p className="mt-1 text-zinc-600">{formatPlaceAddress(place)}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Badge variant="muted">{getCategoryLabel(place.category)}</Badge>
           {place.acceptsAmex != null && (

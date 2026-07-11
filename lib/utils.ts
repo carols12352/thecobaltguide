@@ -73,3 +73,35 @@ export function formatPlaceLocation(place: {
   }
   return "Location unknown";
 }
+
+export function formatPlaceAddress(place: {
+  name?: string | null;
+  addressLine1?: string | null;
+  city?: string | null;
+  province?: string | null;
+  postalCode?: string | null;
+}): string {
+  const city = place.city?.trim();
+  const province = place.province?.trim();
+  let line1 = place.addressLine1?.trim() || place.name?.trim() || "";
+
+  if (line1 && city) {
+    const citySuffix = `, ${city}`;
+    if (line1.toLowerCase().endsWith(citySuffix.toLowerCase())) {
+      line1 = line1.slice(0, -citySuffix.length).trim();
+    }
+  }
+
+  const parts: string[] = [];
+  if (line1) parts.push(line1);
+
+  const locality = [city, province].filter(Boolean).join(", ");
+  if (locality) parts.push(locality);
+
+  const postal = place.postalCode?.trim();
+  if (postal && !/^(unknown|n\/a)$/i.test(postal)) {
+    parts.push(postal);
+  }
+
+  return parts.join(", ") || "Location unknown";
+}

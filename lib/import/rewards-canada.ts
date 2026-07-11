@@ -134,8 +134,8 @@ export function parseRewardsCanadaRecord(
     multiplier,
     category: inferCategory(multiplier),
     externalPlaceId: buildExternalPlaceId(name, city, provinceCode),
-    addressLine1: `${name}, ${city}`,
-    postalCode: "unknown",
+    addressLine1: name,
+    postalCode: "",
     sourceUrl: "https://www.rewardscanada.ca/cobaltmultipliers.html",
   };
 }

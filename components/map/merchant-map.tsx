@@ -5,6 +5,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_DEFAULTS } from "@/config/constants";
 import { DEFAULT_CENTER, getMapStyleUrl } from "@/lib/map/config";
+import { registerPoiIconFallback } from "@/lib/map/poi-icon-fallback";
 import type { MapPlace } from "@/types/domain";
 import type { MapFilters } from "@/components/filters/map-filters";
 
@@ -197,6 +198,8 @@ export function MerchantMap({ filters, onPlacesLoaded }: MerchantMapProps) {
       center: [DEFAULT_CENTER.longitude, DEFAULT_CENTER.latitude],
       zoom: MAP_DEFAULTS.defaultZoom,
     });
+
+    registerPoiIconFallback(map);
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     map.addControl(
