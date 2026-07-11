@@ -177,8 +177,10 @@ export function MerchantMap(props: MerchantMapProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  onPlacesLoadedRef.current = onPlacesLoaded;
-  onPlaceSelectRef.current = props.onPlaceSelect;
+  useEffect(() => {
+    onPlacesLoadedRef.current = onPlacesLoaded;
+    onPlaceSelectRef.current = props.onPlaceSelect;
+  }, [onPlacesLoaded, props.onPlaceSelect]);
 
   const fetchPlaces = useCallback(async (map: maplibregl.Map) => {
     const bounds = map.getBounds();
@@ -251,7 +253,9 @@ export function MerchantMap(props: MerchantMapProps) {
     mapRef.current = map;
 
     return () => {
-      popupRef.current?.remove();
+      const popup = popupRef.current;
+      popup?.remove();
+      popupRef.current = null;
       map.remove();
       mapRef.current = null;
     };

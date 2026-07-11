@@ -141,7 +141,8 @@ export function parseRewardsCanadaRecord(
 }
 
 /** Rewards Canada community list is treated as high-confidence seed data. */
-export function confidenceForImport(_multiplier: MultiplierValue): ConfidenceLevel {
+export function confidenceForImport(multiplier: MultiplierValue): ConfidenceLevel {
+  void multiplier;
   return "high";
 }
 
