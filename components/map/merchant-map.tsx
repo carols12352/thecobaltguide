@@ -5,6 +5,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_DEFAULTS } from "@/config/constants";
 import { DEFAULT_CENTER, getMapStyleUrl } from "@/lib/map/config";
+import { distanceMetres } from "@/lib/map/distance";
 import {
   animatePlacesIn,
   getFlyDurationMs,
@@ -169,12 +170,21 @@ function setupPlaceLayers(
   });
 }
 
+function samePlaceIds(a: MapPlace[], b: MapPlace[]): boolean {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a.map((place) => place.id));
+  return b.every((place) => ids.has(place.id));
+}
+
 function updatePlacesSource(
   map: maplibregl.Map,
   places: MapPlace[],
   center: { latitude: number; longitude: number },
-  animate = true,
+  previousPlaces: MapPlace[],
+  animate = false,
 ) {
+  if (samePlaceIds(previousPlaces, places)) return;
+
   const source = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
   source?.setData(placesToGeoJSON(places));
   if (animate) {
@@ -194,9 +204,13 @@ export function MerchantMap(props: MerchantMapProps) {
   const filtersRef = useRef(filters);
   const onPlacesLoadedRef = useRef(onPlacesLoaded);
   const onPlaceSelectRef = useRef(props.onPlaceSelect);
-  const fetchPlacesRef = useRef<(map: maplibregl.Map) => Promise<void>>(
-    async () => {},
-  );
+  const fetchPlacesRef = useRef<
+    (map: maplibregl.Map, options?: { animate?: boolean; showLoading?: boolean }) => Promise<void>
+  >(async () => {});
+  const animateNextFetchRef = useRef(false);
+  const showLoadingNextFetchRef = useRef(false);
+  const skipMoveEndFetchRef = useRef(false);
+  const selectedPlaceIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,7 +223,15 @@ export function MerchantMap(props: MerchantMapProps) {
     onPlaceSelectRef.current = props.onPlaceSelect;
   }, [onPlacesLoaded, props.onPlaceSelect]);
 
-  const fetchPlaces = useCallback(async (map: maplibregl.Map) => {
+  const fetchPlaces = useCallback(async (
+    map: maplibregl.Map,
+    options: { animate?: boolean; showLoading?: boolean } = {},
+  ) => {
+    const shouldAnimate = options.animate ?? animateNextFetchRef.current;
+    const shouldShowLoading = options.showLoading ?? showLoadingNextFetchRef.current;
+    animateNextFetchRef.current = false;
+    showLoadingNextFetchRef.current = false;
+
     fetchAbortRef.current?.abort();
     const controller = new AbortController();
     fetchAbortRef.current = controller;
@@ -228,8 +250,10 @@ export function MerchantMap(props: MerchantMapProps) {
     if (activeFilters.multiplier) params.set("multiplier", activeFilters.multiplier);
     if (activeFilters.category) params.set("category", activeFilters.category);
 
-    setLoading(true);
-    setError(null);
+    if (shouldShowLoading) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const res = await fetch(`/api/places/map?${params}`, {
@@ -237,21 +261,26 @@ export function MerchantMap(props: MerchantMapProps) {
       });
       if (!res.ok) throw new Error("Failed to load places");
       const data = await res.json();
+      const previousPlaces = placesRef.current;
       placesRef.current = data.places;
       updatePlacesSource(
         map,
         data.places,
         { latitude: center.lat, longitude: center.lng },
+        previousPlaces,
+        shouldAnimate,
       );
-      onPlacesLoadedRef.current?.(data.places, {
-        center: { latitude: center.lat, longitude: center.lng },
-        zoom: map.getZoom(),
-      });
+      if (!samePlaceIds(previousPlaces, data.places)) {
+        onPlacesLoadedRef.current?.(data.places, {
+          center: { latitude: center.lat, longitude: center.lng },
+          zoom: map.getZoom(),
+        });
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Could not load merchant data");
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      if (shouldShowLoading && !controller.signal.aborted) setLoading(false);
     }
   }, []);
 
@@ -282,10 +311,16 @@ export function MerchantMap(props: MerchantMapProps) {
 
     map.on("load", () => {
       setupPlaceLayers(map, popupRef, onPlaceSelectRef);
-      void fetchPlacesRef.current(map);
+      showLoadingNextFetchRef.current = true;
+      void fetchPlacesRef.current(map, { animate: true, showLoading: true });
     });
 
     map.on("moveend", () => {
+      if (skipMoveEndFetchRef.current) {
+        skipMoveEndFetchRef.current = false;
+        return;
+      }
+
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(
         () => void fetchPlacesRef.current(map),
@@ -309,25 +344,51 @@ export function MerchantMap(props: MerchantMapProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
-    void fetchPlaces(map);
+    animateNextFetchRef.current = true;
+    showLoadingNextFetchRef.current = true;
+    void fetchPlaces(map, { animate: true, showLoading: true });
   }, [filters, fetchPlaces]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !selectedPlace) return;
+    if (!selectedPlace) {
+      selectedPlaceIdRef.current = null;
+      return;
+    }
+    if (!map) return;
 
+    if (selectedPlaceIdRef.current === selectedPlace.id) {
+      showPlacePopup(map, selectedPlace, popupRef);
+      return;
+    }
+    selectedPlaceIdRef.current = selectedPlace.id;
+
+    const mapCenter = map.getCenter();
+    const distanceToPlace = distanceMetres(
+      mapCenter.lat,
+      mapCenter.lng,
+      selectedPlace.latitude,
+      selectedPlace.longitude,
+    );
+    const targetZoom = Math.max(map.getZoom(), 15);
+    const needsMove = distanceToPlace > 75 || map.getZoom() < 15;
+
+    showPlacePopup(map, selectedPlace, popupRef);
+
+    if (!needsMove) return;
+
+    skipMoveEndFetchRef.current = true;
     map.easeTo({
       center: [selectedPlace.longitude, selectedPlace.latitude],
-      zoom: Math.max(map.getZoom(), 15),
+      zoom: targetZoom,
       duration: getFlyDurationMs(
-        { latitude: map.getCenter().lat, longitude: map.getCenter().lng },
+        { latitude: mapCenter.lat, longitude: mapCenter.lng },
         {
           latitude: selectedPlace.latitude,
           longitude: selectedPlace.longitude,
         },
       ),
     });
-    showPlacePopup(map, selectedPlace, popupRef);
   }, [selectedPlace]);
 
   return (
@@ -346,7 +407,10 @@ export function MerchantMap(props: MerchantMapProps) {
             className="font-medium underline"
             onClick={() => {
               const map = mapRef.current;
-              if (map) void fetchPlaces(map);
+              if (map) {
+                showLoadingNextFetchRef.current = true;
+                void fetchPlaces(map, { showLoading: true });
+              }
             }}
           >
             Retry
