@@ -7,8 +7,8 @@ import { moderationService } from "@/server/services/moderation-service";
 export async function GET() {
   try {
     await requireModerator();
-    const flags = await moderationService.getOpenFlags();
-    return jsonAdmin({ flags });
+    const flagGroups = await moderationService.getOpenFlagGroups();
+    return jsonAdmin({ flagGroups });
   } catch (error) {
     if (error instanceof AuthError) {
       return error.message.includes("Moderator")

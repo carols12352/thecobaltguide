@@ -11,6 +11,16 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { getCategoryLabel } from "@/config/categories";
 import { REPORT_KIND_LABELS } from "@/lib/reports/report-kind";
+import { REPUTATION_ADMIN_HINT } from "@/lib/reputation/scoring";
+import {
+  buildAdminPlacesSearchParams,
+  parsePlaceSearchInput,
+  type PlaceSearchCriteria,
+} from "@/lib/admin/place-search";
+import { formatAdminFlagGroupHeadline } from "@/lib/flags/admin-flag-groups";
+import { FLAG_REASON_LABELS } from "@/lib/flags/user-flag-state";
+import { formatCanadianPostalCodeInput } from "@/lib/validation/canadian-postal-code";
+import type { AdminFlagGroup } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 type AdminTab = "overview" | "reports" | "flags" | "places" | "users";
@@ -38,17 +48,6 @@ interface AdminReport {
   reporter: { id: string; username: string | null } | null;
 }
 
-interface AdminFlag {
-  id: string;
-  reason: string;
-  details: string | null;
-  status: string;
-  created_at: string;
-  place_id: string;
-  places: { id: string; name: string; city: string } | null;
-  reporter: { id: string; username: string | null } | null;
-}
-
 interface AdminPlace {
   id: string;
   name: string;
@@ -70,15 +69,6 @@ interface AdminUser {
   reputation_score: number;
   created_at: string;
 }
-
-const FLAG_REASON_LABELS: Record<string, string> = {
-  duplicate: "Duplicate",
-  wrong_address: "Wrong address",
-  permanently_closed: "Permanently closed",
-  does_not_accept_amex: "Does not accept Amex",
-  incorrect_category: "Incorrect category",
-  other: "Other",
-};
 
 const PAYMENT_CONTEXT_LABELS: Record<string, string> = {
   in_store: "In store",
@@ -136,12 +126,18 @@ export function AdminDashboard() {
   const [tab, setTab] = useState<AdminTab>("overview");
   const [session, setSession] = useState<AdminSession | null>(null);
   const [reports, setReports] = useState<AdminReport[]>([]);
-  const [flags, setFlags] = useState<AdminFlag[]>([]);
+  const [flagGroups, setFlagGroups] = useState<AdminFlagGroup[]>([]);
   const [places, setPlaces] = useState<AdminPlace[]>([]);
   const [placesTotal, setPlacesTotal] = useState(0);
   const [placePage, setPlacePage] = useState(1);
-  const [placeSearchInput, setPlaceSearchInput] = useState("");
-  const [placeSearchQuery, setPlaceSearchQuery] = useState("");
+  const [placeSearchInputs, setPlaceSearchInputs] = useState({
+    name: "",
+    postalCode: "",
+    addressLine1: "",
+  });
+  const [placeSearchCriteria, setPlaceSearchCriteria] =
+    useState<PlaceSearchCriteria | null>(null);
+  const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [placesLoading, setPlacesLoading] = useState(false);
   const [activePlaceCount, setActivePlaceCount] = useState(0);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -173,7 +169,7 @@ export function AdminDashboard() {
 
   const stats = useMemo(
     () => ({
-      openFlags: flags.length,
+      openFlags: flagGroups.reduce((total, group) => total + group.flagCount, 0),
       activeReports: reports.filter(
         (report) =>
           report.status === "active" &&
@@ -184,7 +180,7 @@ export function AdminDashboard() {
       activePlaces: activePlaceCount,
       users: users.length,
     }),
-    [activePlaceCount, flags.length, reports, users.length],
+    [activePlaceCount, flagGroups, reports, users.length],
   );
 
   const refreshModerationQueues = useCallback(async () => {
@@ -200,7 +196,7 @@ export function AdminDashboard() {
 
     if (flagsRes.ok) {
       const data = await flagsRes.json();
-      setFlags(data.flags ?? []);
+      setFlagGroups(data.flagGroups ?? []);
     }
   }, []);
 
@@ -251,7 +247,7 @@ export function AdminDashboard() {
     const placesCountData = await placesRes.json();
 
     setReports(reportsData.reports ?? []);
-    setFlags(flagsData.flags ?? []);
+    setFlagGroups(flagsData.flagGroups ?? []);
     setActivePlaceCount(placesCountData.total ?? 0);
     setPlaces([]);
     setPlacesTotal(0);
@@ -267,17 +263,18 @@ export function AdminDashboard() {
   }, []);
 
   const loadPlaces = useCallback(async () => {
+    if (!placeSearchCriteria) {
+      setPlaces([]);
+      setPlacesTotal(0);
+      return;
+    }
+
     setPlacesLoading(true);
-    const params = new URLSearchParams({
-      page: String(placePage),
-      limit: "10",
+    const params = buildAdminPlacesSearchParams(placeSearchCriteria, {
+      page: placePage,
+      limit: 10,
+      status: placeFilter !== "all" ? placeFilter : undefined,
     });
-    if (placeFilter !== "all") {
-      params.set("status", placeFilter);
-    }
-    if (placeSearchQuery) {
-      params.set("q", placeSearchQuery);
-    }
 
     const res = await fetch(`/api/admin/places?${params.toString()}`, adminFetch);
     if (res.ok) {
@@ -286,7 +283,20 @@ export function AdminDashboard() {
       setPlacesTotal(data.total ?? 0);
     }
     setPlacesLoading(false);
-  }, [placeFilter, placePage, placeSearchQuery]);
+  }, [placeFilter, placePage, placeSearchCriteria]);
+
+  function submitPlaceSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const parsed = parsePlaceSearchInput(placeSearchInputs);
+    if (!parsed.criteria) {
+      setPlaceSearchError(parsed.error);
+      return;
+    }
+
+    setPlaceSearchError(null);
+    setPlacePage(1);
+    setPlaceSearchCriteria(parsed.criteria);
+  }
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadDashboard(), 0);
@@ -390,16 +400,19 @@ export function AdminDashboard() {
     await refreshModerationQueues();
   }
 
-  async function patchFlag(id: string, status: "resolved" | "dismissed") {
+  async function resolvePlaceFlags(
+    placeId: string,
+    status: "resolved" | "dismissed",
+  ) {
     setActionError(null);
-    const res = await fetch(`/api/admin/flags/${id}`, {
+    const res = await fetch(`/api/admin/places/${placeId}/flags`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setActionError(data?.error ?? "Could not update flag.");
+      setActionError(data?.error ?? "Could not update flags.");
       return;
     }
 
@@ -428,7 +441,11 @@ export function AdminDashboard() {
 
   async function patchUser(
     id: string,
-    updates: { role?: AdminUser["role"]; status?: AdminUser["status"] },
+    updates: {
+      role?: AdminUser["role"];
+      status?: AdminUser["status"];
+      reputationScore?: number;
+    },
   ): Promise<AdminUser | null> {
     setActionError(null);
     const res = await fetch(`/api/admin/users/${id}`, {
@@ -674,59 +691,81 @@ export function AdminDashboard() {
 
       {tab === "flags" ? (
         <section className="space-y-3">
-          {flags.map((flag) => (
-            <Card key={flag.id}>
+          {flagGroups.map((group) => (
+            <Card key={group.placeId}>
               <CardHeader className="pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium">
-                    {flag.places?.name ?? "Unknown place"}
-                  </p>
-                  <Badge variant="warning">
-                    {FLAG_REASON_LABELS[flag.reason] ?? flag.reason}
-                  </Badge>
+                  <div>
+                    <p className="font-medium">
+                      {group.placeName ?? "Unknown place"}
+                    </p>
+                    <p className="text-sm text-zinc-600">
+                      {group.placeCity ?? "Unknown city"} ·{" "}
+                      {formatAdminFlagGroupHeadline(group)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {group.reasons.map((reason) => (
+                      <Badge key={reason} variant="warning">
+                        {FLAG_REASON_LABELS[reason] ?? reason}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3 pt-0">
-                <p className="text-sm text-zinc-600">
-                  {flag.places?.city ?? "Unknown city"} · flagged by{" "}
-                  {flag.reporter?.username ?? "unknown"}
-                  {flag.reporter?.id ? (
-                    <>
-                      {" · "}
-                      <span className="font-mono text-xs">{flag.reporter.id}</span>
-                    </>
-                  ) : null}{" "}
-                  · {formatDate(flag.created_at)}
-                </p>
-                {flag.details ? (
-                  <p className="text-sm text-zinc-700">{flag.details}</p>
-                ) : null}
+                <ul className="space-y-2 text-sm text-zinc-600">
+                  {group.flags.map((flag) => (
+                    <li key={flag.id} className="rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-900/50">
+                      <p>
+                        {FLAG_REASON_LABELS[flag.reason] ?? flag.reason} ·{" "}
+                        {flag.reporter.username ?? "unknown"}
+                        {flag.reporter.id !== "unknown" ? (
+                          <>
+                            {" · "}
+                            <span className="font-mono text-xs">
+                              {flag.reporter.id}
+                            </span>
+                          </>
+                        ) : null}{" "}
+                        · {formatDate(flag.createdAt)}
+                      </p>
+                      {flag.details ? (
+                        <p className="mt-1 text-zinc-700 dark:text-zinc-300">
+                          {flag.details}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
                 <div className="flex flex-wrap gap-2">
-                  {flag.places?.id ? (
-                    <Link href={`/admin/places/${flag.places.id}`}>
-                      <Button size="sm" variant="outline">
-                        Moderator view
-                      </Button>
-                    </Link>
-                  ) : null}
+                  <Link href={`/admin/places/${group.placeId}`}>
+                    <Button size="sm" variant="outline">
+                      Moderator view
+                    </Button>
+                  </Link>
                   <Button
                     size="sm"
-                    onClick={() => void patchFlag(flag.id, "resolved")}
+                    onClick={() =>
+                      void resolvePlaceFlags(group.placeId, "resolved")
+                    }
                   >
-                    Resolve
+                    Resolve all
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void patchFlag(flag.id, "dismissed")}
+                    onClick={() =>
+                      void resolvePlaceFlags(group.placeId, "dismissed")
+                    }
                   >
-                    Dismiss
+                    Dismiss all
                   </Button>
                 </div>
               </CardContent>
             </Card>
           ))}
-          {flags.length === 0 ? (
+          {flagGroups.length === 0 ? (
             <EmptyState message="No open flags." />
           ) : null}
         </section>
@@ -735,26 +774,69 @@ export function AdminDashboard() {
       {tab === "places" ? (
         <section className="space-y-6">
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setPlacePage(1);
-              setPlaceSearchQuery(placeSearchInput.trim());
-            }}
-            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+            onSubmit={submitPlaceSearch}
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
           >
-            <div className="min-w-0 flex-1 space-y-1">
-              <Label htmlFor="place-search">Search places</Label>
+            <div className="space-y-1 sm:col-span-2 lg:col-span-1">
+              <Label htmlFor="place-search-name">Merchant name</Label>
               <Input
-                id="place-search"
-                value={placeSearchInput}
-                onChange={(e) => setPlaceSearchInput(e.target.value)}
-                placeholder="Name, postal code, address, or UUID"
+                id="place-search-name"
+                value={placeSearchInputs.name}
+                onChange={(e) =>
+                  setPlaceSearchInputs((current) => ({
+                    ...current,
+                    name: e.target.value,
+                  }))
+                }
+                placeholder="Name or place UUID"
                 spellCheck={false}
               />
             </div>
-            <Button type="submit" disabled={placesLoading}>
-              {placesLoading ? "Searching…" : "Search"}
-            </Button>
+            <div className="space-y-1">
+              <Label htmlFor="place-search-postal">Postal code</Label>
+              <Input
+                id="place-search-postal"
+                value={placeSearchInputs.postalCode}
+                onChange={(e) =>
+                  setPlaceSearchInputs((current) => ({
+                    ...current,
+                    postalCode: formatCanadianPostalCodeInput(e.target.value),
+                  }))
+                }
+                placeholder="A1A 1A1"
+                maxLength={7}
+                spellCheck={false}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="place-search-address">Address</Label>
+              <Input
+                id="place-search-address"
+                value={placeSearchInputs.addressLine1}
+                onChange={(e) =>
+                  setPlaceSearchInputs((current) => ({
+                    ...current,
+                    addressLine1: e.target.value,
+                  }))
+                }
+                placeholder="Street address"
+                spellCheck={false}
+              />
+            </div>
+            <div className="flex items-end sm:col-span-2 lg:col-span-4">
+              <Button type="submit" disabled={placesLoading}>
+                {placesLoading ? "Searching…" : "Look up"}
+              </Button>
+            </div>
+            {placeSearchError ? (
+              <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-4">
+                {placeSearchError}
+              </p>
+            ) : (
+              <p className="text-xs text-zinc-500 sm:col-span-2 lg:col-span-4">
+                Fill in one or more fields. Multiple fields narrow the search.
+              </p>
+            )}
           </form>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -840,7 +922,13 @@ export function AdminDashboard() {
               </Card>
             ))}
             {filteredPlaces.length === 0 && !placesLoading ? (
-              <EmptyState message="No places match this search." />
+              <EmptyState
+                message={
+                  placeSearchCriteria
+                    ? "No places match this search."
+                    : "Enter a merchant name, postal code, or address to look up places."
+                }
+              />
             ) : null}
             {placesLoading && filteredPlaces.length === 0 ? (
               <p className="text-sm text-zinc-600">Loading places…</p>
@@ -1017,10 +1105,23 @@ function AdminUserCard({
   onUpdate: (user: AdminUser) => void;
   onPatch: (
     id: string,
-    updates: { role?: AdminUser["role"]; status?: AdminUser["status"] },
+    updates: {
+      role?: AdminUser["role"];
+      status?: AdminUser["status"];
+      reputationScore?: number;
+    },
   ) => Promise<AdminUser | null>;
 }) {
   const isSelf = user.id === currentUserId;
+  const [reputationDraft, setReputationDraft] = useState({
+    sourceScore: user.reputation_score,
+    value: String(user.reputation_score),
+  });
+  const [savingReputation, setSavingReputation] = useState(false);
+  const reputationDraftValue =
+    reputationDraft.sourceScore === user.reputation_score
+      ? reputationDraft.value
+      : String(user.reputation_score);
 
   return (
     <Card>
@@ -1039,7 +1140,43 @@ function AdminUserCard({
             {user.report_count} reports · reputation {user.reputation_score}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label htmlFor={`rep-${user.id}`} className="text-xs">
+              Reputation
+            </Label>
+            <Input
+              id={`rep-${user.id}`}
+              type="number"
+              className="w-28"
+              value={reputationDraftValue}
+              onChange={(e) => setReputationDraft({
+                sourceScore: user.reputation_score,
+                value: e.target.value,
+              })}
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={savingReputation}
+            onClick={async () => {
+              const parsed = Number.parseInt(reputationDraftValue, 10);
+              if (Number.isNaN(parsed)) return;
+              setSavingReputation(true);
+              const updated = await onPatch(user.id, { reputationScore: parsed });
+              setSavingReputation(false);
+              if (updated) {
+                onUpdate(updated);
+                setReputationDraft({
+                  sourceScore: updated.reputation_score,
+                  value: String(updated.reputation_score),
+                });
+              }
+            }}
+          >
+            {savingReputation ? "Saving…" : "Save rep"}
+          </Button>
           <Select
             value={user.role}
             disabled={isSelf}
@@ -1156,20 +1293,23 @@ function AdminHintsCard({
             <HintLine action="Restore" description="Clears the flag; returns to active." />
             <HintLine action="Remove" description="Hides from the public map." />
           </div>
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            {REPUTATION_ADMIN_HINT}
+          </p>
         </HintsSection>
 
         <HintsSection title="Flags & places">
           <div className="grid gap-2 sm:grid-cols-2">
-            <HintLine action="Resolve" description="The flagged issue is handled." />
-            <HintLine action="Dismiss" description="The flag wasn't actionable." />
+            <HintLine action="Resolve" description="The flagged issue is handled (all flags for that place)." />
+            <HintLine action="Dismiss" description="The flags weren't actionable (all flags for that place)." />
             <HintLine
               action="Places"
-              description="Search by name, address, postal code, or UUID."
+              description="Look up by merchant name, postal code, or address — at least one is required."
             />
             {isAdmin ? (
               <HintLine
                 action="Users"
-                description="Look up a UUID to change role or suspend."
+                description="Look up a UUID to change role, suspend, or edit reputation."
               />
             ) : null}
           </div>

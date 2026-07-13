@@ -79,13 +79,18 @@ export async function setCachedAdminFlags<T>(limit: number, value: T): Promise<v
   );
 }
 
+type AdminPlaceSearchParams = {
+  placeId?: string;
+  name?: string;
+  postalCode?: string;
+  addressLine1?: string;
+  status?: string;
+  page: number;
+  pageSize: number;
+};
+
 export async function getCachedAdminPlacesSearch<T>(
-  params: {
-    query?: string;
-    status?: string;
-    page: number;
-    pageSize: number;
-  },
+  params: AdminPlaceSearchParams,
 ): Promise<T | null> {
   const version = await getAdminCacheVersion();
   if (version === 0) return null;
@@ -93,12 +98,7 @@ export async function getCachedAdminPlacesSearch<T>(
 }
 
 export async function setCachedAdminPlacesSearch<T>(
-  params: {
-    query?: string;
-    status?: string;
-    page: number;
-    pageSize: number;
-  },
+  params: AdminPlaceSearchParams,
   value: T,
 ): Promise<void> {
   if (!isRedisWriteConfigured()) return;
