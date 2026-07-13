@@ -16,11 +16,14 @@ type PasswordFormMode = "set" | "update" | "reset";
 
 export function SecuritySettings() {
   const searchParams = useSearchParams();
+  const opensFromPasswordReset = searchParams.get("password") === "reset";
   const [providers, setProviders] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [hasPasswordLogin, setHasPasswordLogin] = useState(false);
-  const [passwordFormOpen, setPasswordFormOpen] = useState(false);
-  const [passwordFormMode, setPasswordFormMode] = useState<PasswordFormMode>("set");
+  const [passwordFormOpen, setPasswordFormOpen] = useState(opensFromPasswordReset);
+  const [passwordFormMode, setPasswordFormMode] = useState<PasswordFormMode>(
+    opensFromPasswordReset ? "reset" : "set",
+  );
   const [currentPasswordVerified, setCurrentPasswordVerified] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
@@ -88,12 +91,6 @@ export function SecuritySettings() {
 
     return () => subscription.unsubscribe();
   }, [applyUserSecurityState, openPasswordForm]);
-
-  useEffect(() => {
-    if (searchParams.get("password") === "reset") {
-      openPasswordForm("reset");
-    }
-  }, [searchParams, openPasswordForm]);
 
   function handleCurrentPasswordChange(value: string) {
     setCurrentPassword(value);

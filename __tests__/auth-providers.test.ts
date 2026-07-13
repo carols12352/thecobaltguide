@@ -5,7 +5,6 @@ import {
   formatProviderList,
   getSecurityStateFromUser,
   userHasEmailPassword,
-  userHasPasswordLogin,
 } from "@/lib/auth/providers";
 
 describe("auth providers", () => {

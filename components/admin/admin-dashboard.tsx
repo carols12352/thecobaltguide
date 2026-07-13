@@ -99,6 +99,15 @@ const TABS: { id: AdminTab; label: string; adminOnly?: boolean }[] = [
 const ADMIN_HINTS_DISMISSED_KEY = "cobalt-admin-hints-dismissed";
 const adminFetch: RequestInit = { cache: "no-store" };
 
+function readAdminHintsDismissed() {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(ADMIN_HINTS_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, {
     year: "numeric",
@@ -280,15 +289,16 @@ export function AdminDashboard() {
   }, [placeFilter, placePage, placeSearchQuery]);
 
   useEffect(() => {
-    void loadDashboard();
+    const timeout = window.setTimeout(() => void loadDashboard(), 0);
+    return () => window.clearTimeout(timeout);
   }, [loadDashboard]);
 
   useEffect(() => {
-    try {
-      setHintsDismissed(localStorage.getItem(ADMIN_HINTS_DISMISSED_KEY) === "1");
-    } catch {
-      setHintsDismissed(false);
-    }
+    const timeout = window.setTimeout(
+      () => setHintsDismissed(readAdminHintsDismissed()),
+      0,
+    );
+    return () => window.clearTimeout(timeout);
   }, []);
 
   function dismissAdminHints() {
@@ -308,13 +318,14 @@ export function AdminDashboard() {
 
   useEffect(() => {
     if (tab !== "places") return;
-    void loadPlaces();
+    const timeout = window.setTimeout(() => void loadPlaces(), 0);
+    return () => window.clearTimeout(timeout);
   }, [tab, loadPlaces]);
 
   useEffect(() => {
-    if (session && !isAdmin && tab === "users") {
-      setTab("overview");
-    }
+    if (!session || isAdmin || tab !== "users") return;
+    const timeout = window.setTimeout(() => setTab("overview"), 0);
+    return () => window.clearTimeout(timeout);
   }, [session, isAdmin, tab]);
 
   async function searchUserById(e: React.FormEvent) {

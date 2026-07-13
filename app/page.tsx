@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -52,26 +52,21 @@ export default function HomePage() {
 
   const listPlaces = searchResults ?? viewportPlaces;
   const isSearchMode = searchResults !== null;
+  const maxListPage = Math.max(
+    1,
+    Math.ceil(listPlaces.length / HOME_LIST_PAGE_SIZE),
+  );
+  const currentListPage = Math.min(listPage, maxListPage);
 
   const paginatedPlaces = useMemo(() => {
-    const start = (listPage - 1) * HOME_LIST_PAGE_SIZE;
+    const start = (currentListPage - 1) * HOME_LIST_PAGE_SIZE;
     return listPlaces.slice(start, start + HOME_LIST_PAGE_SIZE);
-  }, [listPage, listPlaces]);
-
-  useEffect(() => {
-    setListPage(1);
-  }, [listPlaces, isSearchMode, searchQuery]);
-
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(listPlaces.length / HOME_LIST_PAGE_SIZE));
-    if (listPage > maxPage) {
-      setListPage(maxPage);
-    }
-  }, [listPage, listPlaces.length]);
+  }, [currentListPage, listPlaces]);
 
   const handlePlacesLoaded = useCallback(
     (places: MapPlace[], meta: MapViewportMeta) => {
       setViewportPlaces(sortPlacesByDistance(places, meta.center));
+      setListPage(1);
     },
     [],
   );
@@ -90,6 +85,7 @@ export default function HomePage() {
     if (!searchQuery.trim()) {
       setSearchResults(null);
       setSelectedPlace(null);
+      setListPage(1);
       return;
     }
 
@@ -103,6 +99,7 @@ export default function HomePage() {
       setSearchResults(data.places ?? []);
       setSelectedPlace(null);
       setListOpen(true);
+      setListPage(1);
     } catch {
       setSearchError("Search failed. Please try again.");
     } finally {
@@ -115,6 +112,7 @@ export default function HomePage() {
     setSearchResults(null);
     setSearchError(null);
     setSelectedPlace(null);
+    setListPage(1);
   }
 
   return (
@@ -216,7 +214,7 @@ export default function HomePage() {
           {listPlaces.length > HOME_LIST_PAGE_SIZE ? (
             <PaginationBar
               compact
-              page={listPage}
+              page={currentListPage}
               total={listPlaces.length}
               pageSize={HOME_LIST_PAGE_SIZE}
               itemLabel="places"

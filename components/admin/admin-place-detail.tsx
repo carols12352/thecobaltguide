@@ -67,7 +67,8 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
   }, [placeId]);
 
   useEffect(() => {
-    void loadPlace();
+    const timeout = window.setTimeout(() => void loadPlace(), 0);
+    return () => window.clearTimeout(timeout);
   }, [loadPlace]);
 
   async function saveSummary(e: React.FormEvent) {
