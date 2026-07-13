@@ -4,6 +4,8 @@ import {
   adminReportsCacheKey,
   mapCacheKey,
   placeCacheKey,
+  userAccountFlagsCacheKey,
+  userAccountReportsCacheKey,
 } from "@/lib/cache/keys";
 import { alignViewportToGrid } from "@/lib/map/viewport-grid";
 
@@ -56,19 +58,35 @@ describe("cache keys", () => {
 
   it("builds stable admin places cache keys", () => {
     const params = {
-      query: "  Toronto  ",
+      name: "  Toronto  ",
+      postalCode: "M5V 1A1",
+      addressLine1: "King St",
       status: "active",
       page: 2,
       pageSize: 10,
     };
 
     expect(adminPlacesCacheKey(1, params)).toBe(
-      "cobalt:cache:admin:v1:1:places:toronto:active:2:10",
+      "cobalt:cache:admin:v1:1:places:toronto:m5v 1a1:king st:-:active:2:10",
     );
     expect(adminPlacesCacheKey(2, params)).not.toBe(adminPlacesCacheKey(1, params));
   });
 
   it("builds admin reports cache keys", () => {
     expect(adminReportsCacheKey(3, 50)).toBe("cobalt:cache:admin:v1:3:reports:50");
+  });
+
+  it("builds user account list cache keys", () => {
+    const params = { view: "active", page: 2, pageSize: 5 };
+
+    expect(userAccountReportsCacheKey(4, "user-1", params)).toBe(
+      "cobalt:cache:user-account:v1:4:user-1:reports:active:2:5",
+    );
+    expect(userAccountFlagsCacheKey(4, "user-1", params)).toBe(
+      "cobalt:cache:user-account:v1:4:user-1:flags:active:2:5",
+    );
+    expect(userAccountReportsCacheKey(5, "user-1", params)).not.toBe(
+      userAccountReportsCacheKey(4, "user-1", params),
+    );
   });
 });

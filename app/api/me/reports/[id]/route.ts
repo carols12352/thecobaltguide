@@ -17,11 +17,15 @@ export async function DELETE(
     const { id } = await params;
 
     const report = await reportService.deleteOwnReport(id, user.id);
-    if (!report) return jsonNotFound("Report not found");
-
     return jsonOk({ report });
   } catch (error) {
     if (error instanceof AuthError) return jsonUnauthorized(error.message);
+    if (error instanceof Error && error.message === "Report not found") {
+      return jsonNotFound("Report not found");
+    }
+    if (error instanceof Error && error.message === "Report cannot be removed") {
+      return jsonError("This report can no longer be removed.", 403);
+    }
     captureException(error, { route: "DELETE /api/me/reports/:id" });
     return jsonError("Failed to delete report", 500);
   }

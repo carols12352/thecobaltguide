@@ -129,15 +129,23 @@ export function adminFlagsCacheKey(version: number, limit: number): string {
 export function adminPlacesCacheKey(
   version: number,
   params: {
-    query?: string;
+    placeId?: string;
+    name?: string;
+    postalCode?: string;
+    addressLine1?: string;
     status?: string;
     page: number;
     pageSize: number;
   },
 ): string {
-  const query = params.query ? normalizeAdminQuery(params.query) : "all";
+  const name = params.name ? normalizeAdminQuery(params.name) : "-";
+  const postal = params.postalCode ? normalizeAdminQuery(params.postalCode) : "-";
+  const address = params.addressLine1
+    ? normalizeAdminQuery(params.addressLine1)
+    : "-";
+  const placeId = params.placeId ?? "-";
   const status = params.status ?? "all";
-  return `cobalt:cache:admin:v1:${version}:places:${query}:${status}:${params.page}:${params.pageSize}`;
+  return `cobalt:cache:admin:v1:${version}:places:${name}:${postal}:${address}:${placeId}:${status}:${params.page}:${params.pageSize}`;
 }
 
 export function adminUsersCacheKey(version: number, limit: number): string {
@@ -150,6 +158,50 @@ export function adminUserCacheKey(version: number, userId: string): string {
 
 export function adminPlaceDetailCacheKey(version: number, placeId: string): string {
   return `cobalt:cache:admin:v1:${version}:place-detail:${placeId}`;
+}
+
+export function userAccountVersionKey(userId: string): string {
+  return `cobalt:cache:user-account-version:${userId}`;
+}
+
+export function userAccountReportsCacheKey(
+  version: number,
+  userId: string,
+  params: {
+    view: string;
+    page: number;
+    pageSize: number;
+  },
+): string {
+  return [
+    "cobalt:cache:user-account:v1",
+    version,
+    userId,
+    "reports",
+    params.view,
+    params.page,
+    params.pageSize,
+  ].join(":");
+}
+
+export function userAccountFlagsCacheKey(
+  version: number,
+  userId: string,
+  params: {
+    view: string;
+    page: number;
+    pageSize: number;
+  },
+): string {
+  return [
+    "cobalt:cache:user-account:v1",
+    version,
+    userId,
+    "flags",
+    params.view,
+    params.page,
+    params.pageSize,
+  ].join(":");
 }
 
 export { MAP_VERSION_KEY, SEARCH_VERSION_KEY, ADMIN_VERSION_KEY };
