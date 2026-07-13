@@ -24,6 +24,7 @@ Users can browse and filter merchants, search by name, submit new locations, rep
 - Add missing merchants with duplicate detection.
 - Confirm existing results or report incorrect data.
 - Flag wrong addresses, duplicates, closures, category errors, and Amex acceptance issues.
+- Place detail pages show **grouped recent reports** (same multiplier and purchase context combined; unique reporter count shown separately from total submissions).
 - Recency-weighted aggregation using reports from the last 180 days.
 - Confidence states: insufficient, disputed, medium, high, and recently confirmed.
 
@@ -31,17 +32,20 @@ Users can browse and filter merchants, search by name, submit new locations, rep
 
 - Email/password, magic-link, and Google authentication through Supabase Auth.
 - Email confirmation, password recovery, password changes, and linked sign-in method display.
-- Personal report history with self-service report removal.
+- Personal report and flag history for the last 30 days, with active/archive views and short-lived Redis caching.
+- Self-service removal of pending reports only (staff-reviewed or removed reports cannot be withdrawn).
 - Role-based access for users, moderators, and administrators.
 - Suspended-account enforcement and write rate limits.
 
 ### Moderation
 
 - Review queues for new-location and error reports.
-- Flag resolution and report moderation.
+- **Place flags grouped by merchant** in the admin queue: open flags on the same place appear as one card with reporter counts, reason summary, and per-flag detail. Resolving or dismissing applies to **all open flags on that place**; reputation is adjusted **once per unique reporter**, even when they submitted multiple flags.
+- Flag resolution and report moderation with automatic reputation updates.
 - Merchant editing, status changes, and duplicate merging.
-- Paginated merchant management and user lookup.
-- Administrator-only user role and suspension controls.
+- **Places tab lookup** by merchant name, postal code, street address, or place UUID (at least one required; combined fields narrow results with AND logic).
+- Moderator place view: **tiered geocode lookup** — postal code first, then street address, then merchant name + city. Mapbox Geocoding and Nominatim are used together; Mapbox Search Box supplements POI coverage when classic geocoding misses a location. Multiple ranked matches are offered when available; results are filtered to the requested city (neighbouring cities such as Kitchener are excluded when searching Waterloo). Empty or incorrect address fields are backfilled from results.
+- Administrator-only user role, suspension, and reputation controls.
 - Moderation audit records.
 
 ## Technology
@@ -139,11 +143,13 @@ NEXT_PUBLIC_MAP_STYLE_URL=https://api.maptiler.com/maps/streets-v2/style.json
 NEXT_PUBLIC_MAP_TILES_API_KEY=your-maptiler-key
 ```
 
-For merchant address geocoding:
+For merchant address geocoding (submission and admin place editing):
 
 ```dotenv
 MAPBOX_ACCESS_TOKEN=your-mapbox-token
 ```
+
+The token powers Mapbox Geocoding, proximity-biased POI search, and the Mapbox Search Box forward API for merchant-name lookups.
 
 For Redis caching and distributed rate limiting:
 
@@ -208,6 +214,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run test:watch` | Run Vitest in watch mode |
 | `npm run import:rewards-canada:dry` | Preview 20 Rewards Canada import records |
 | `npm run import:rewards-canada` | Run the historical Rewards Canada import |
+| `./scripts/commit-segmented.sh --dry-run` | Preview segmented commits for the current working tree |
+| `./scripts/commit-segmented.sh` | Create GPG-signed segmented commits (prompts for confirmation) |
 
 Run the standard verification set before submitting changes:
 
@@ -253,10 +261,16 @@ The script requires Supabase credentials for a live import. See [`supabase/scrip
 | `GET /api/places/search` | Merchant search |
 | `GET /api/places/:id` | Merchant details and current summary |
 | `POST /api/places` | Authenticated merchant creation |
+| `GET /api/places/:id/reports` | Grouped recent reports for a place |
 | `POST /api/places/:id/reports` | Authenticated multiplier report |
 | `POST /api/places/:id/flags` | Authenticated content flag |
-| `/api/me/*` | Current user's reports |
-| `/api/admin/*` | Moderator/admin operations |
+| `GET /api/me/reports` | Current user's reports (last 30 days, active/archive, paginated) |
+| `DELETE /api/me/reports/:id` | Withdraw a pending user report |
+| `GET /api/me/flags` | Current user's flags (last 30 days, active/archive, paginated) |
+| `GET /api/admin/flags` | Open flags grouped by place (`{ flagGroups }`) |
+| `PATCH /api/admin/flags/:id` | Resolve or dismiss all open flags on that flag's place |
+| `GET /api/admin/places` | Merchant lookup (name, postal, address, or place UUID) |
+| `/api/admin/*` | Other moderator/admin operations |
 
 All request input is validated with Zod. Public reads use short CDN caching; authenticated and administrative responses are private and not cached publicly.
 
@@ -272,17 +286,45 @@ All request input is validated with Zod. Public reads use short CDN caching; aut
 Default write limits are configured in `config/constants.ts`:
 
 - 20 reports per user per day.
+- 60 seconds minimum between any two report submissions from the same account.
 - 5 merchant submissions per user per day.
 - 50 write requests per IP per hour.
 - One active report per user, merchant, and UTC day.
 
+Place detail pages show recent reports grouped by multiplier and purchase context (for example, “3 users reported this (5x, In-store)”). Each underlying report is still stored separately; reputation and aggregation operate on individual rows.
+
+**Admin flag review** merges open flags by place. One resolve/dismiss action clears the whole group; reputation credit or penalty applies once per reporter per review, not once per flag row.
+
 With Upstash configured, limits are shared across application instances using atomic Redis operations. Otherwise, limits are process-local and reset when the server restarts.
+
+Report totals (`report_count`) increment on every submission and decrement when you delete your own active report.
+
+### Account activity
+
+The `/account` page lists your **reports** and **flags** from the **last 30 days** only. Each list has **Active** and **Archive** tabs:
+
+- **Reports — Active:** still live on the map and not yet staff-reviewed. **Archive:** reviewed, flagged, or removed.
+- **Flags — Active:** still open in the moderation queue. **Archive:** resolved or dismissed.
+
+You can remove only pending error/new-location reports that staff have not reviewed. Lists are cached per user for about two minutes and refresh after you submit or delete a report or submit a flag.
 
 ## Database model
 
 The main tables are:
 
 - `profiles`: usernames, roles, status, reputation, and contribution counts.
+
+Reputation (`reputation_score`) is updated automatically:
+
+- **+1** when you submit an auto-approved **confirm** or **update** report.
+- **+2** when staff approve your **error** report; **−2** when they remove it as invalid.
+- **+5** when staff accept your **new location** report; **−3** when they remove it as invalid.
+- **+2** when staff **resolve** your place flag; **−2** when they **dismiss** it as invalid (once per review, even if you submitted multiple flags on the same place).
+- **−2** when staff remove your active confirm or update report.
+- **−1** when you delete your own confirm or update report.
+
+You cannot submit reports or flags when reputation is **below −10**. Admins can override reputation from the admin Users tab. Moderators cannot edit reputation directly.
+
 - `card_products`: supported card definitions; migrations seed Amex Cobalt.
 - `places`: merchant identity, category, address, status, and PostGIS location.
 - `multiplier_reports`: community transaction reports and moderation state.
@@ -298,7 +340,7 @@ Database access is protected with Row Level Security. Privileged server operatio
 app/                  pages and API route handlers
 components/           map, auth, account, admin, place, and UI components
 config/               application constants and category definitions
-lib/                  auth, cache, geocoding, map, validation, and utilities
+lib/                  auth, cache, geocoding, map, reputation, validation, and utilities
 server/repositories/  database access
 server/services/      business logic and aggregation
 server/validation/    server request schemas

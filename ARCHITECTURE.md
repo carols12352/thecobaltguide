@@ -286,7 +286,7 @@ Multiple matching reports within 30 days	Recently confirmed
 
 5.5 Administration Module
 
-The admin dashboard should handle exceptions rather than manually reviewing every normal submission.
+The admin dashboard handles exceptions rather than manually reviewing every normal submission.
 
 Responsibilities:
 
@@ -295,21 +295,14 @@ Responsibilities:
 * Merge duplicate places
 * Edit place information
 * Mark locations as permanently closed
-* Review user-submitted flags
+* Review user-submitted flags **grouped by place** (resolve/dismiss all open flags on a place in one action; reputation once per reporter)
 * Suspend abusive accounts
 * Review unusually high submission activity
 * Review places with conflicting reports
+* Look up merchants by name, postal code, address, or place UUID from the Places tab
+* Edit a merchant in moderator view (`/admin/places/:id`): tiered geocode lookup (postal → address → name + city) with Mapbox Geocoding, Nominatim, and Mapbox Search Box; strict city filtering; multiple ranked matches; field backfill
 
-Report removal should use soft deletion.
-
-status = removed
-
-Reports should not be permanently deleted because the system may need to:
-
-* Restore accidental removals
-* Preserve moderation history
-* Investigate abusive users
-* Prevent repeated spam submissions
+Report removal uses soft deletion (`status = removed`).
 
 ⸻
 
@@ -342,6 +335,21 @@ Change system configuration	No	No	No	Yes
 
 ⸻
 
+5.7 Account Module
+
+The account page shows a signed-in user’s recent contribution history and security settings.
+
+Responsibilities:
+
+* Display reputation score and contribution counts
+* List the user’s reports and flags from the last 30 days
+* Split reports into Active (live, unreviewed) and Archive (reviewed, flagged, or removed)
+* Split flags into Active (open) and Archive (resolved or dismissed)
+* Allow self-service removal of pending error/new-location reports only
+* Cache list responses per user in Redis (short TTL) and invalidate on report/flag mutations
+
+⸻
+
 6. Data Model
 
 6.1 profiles
@@ -359,6 +367,20 @@ profiles
 └── updated_at
 
 Authentication credentials remain managed by Supabase Auth.
+
+Reputation rules (v1):
+
+* +1 when a user submits an auto-approved confirm or update report
+* +2 when staff approve an error report; −2 when staff remove it as invalid
+* +5 when staff accept a new location report; −3 when staff remove it as invalid
+* +2 when staff resolve a place flag; −2 when staff dismiss it as invalid (once per reporter per place review, even if they submitted multiple flags)
+* −2 when staff remove an active confirm or update report
+* −1 when the reporter deletes their own confirm or update report
+* Users with reputation below −10 cannot submit reports or flags
+* Admins may set `reputation_score` manually; moderators may not
+* `report_count` tracks submitted reports and decreases when users delete their own active reports
+
+Future phases may add tiers, badges, and privilege gates based on reputation. Complex reputation levels remain out of scope for the MVP.
 
 ⸻
 
@@ -561,6 +583,8 @@ GET /api/places/:id
 GET /api/places/:id/reports
 GET /api/cards
 
+`GET /api/places/:id/reports` returns grouped recent reports: `{ groups, totalReports }`. Groups combine active reports with the same multiplier and payment context; `reporterCount` is unique users, while `reportCount` is total submissions. Reputation and aggregation still operate on individual report rows.
+
 ⸻
 
 8.2 Authenticated User Endpoints
@@ -570,6 +594,9 @@ POST   /api/places/:id/reports
 POST   /api/places/:id/flags
 GET    /api/me/reports
 DELETE /api/me/reports/:id
+GET    /api/me/flags
+
+Account list endpoints return only items from the last 30 days, support `view=active|archive` and pagination, and are cached per user in Redis with invalidation on submit/delete.
 
 Deleting a user’s own report should use soft deletion.
 
@@ -579,11 +606,15 @@ Deleting a user’s own report should use soft deletion.
 
 GET   /api/admin/reports
 PATCH /api/admin/reports/:id
-GET   /api/admin/flags
-PATCH /api/admin/flags/:id
+GET   /api/admin/flags          → `{ flagGroups }` (open flags merged by place)
+PATCH /api/admin/flags/:id      → resolves/dismisses all open flags for that flag's place
+PATCH /api/admin/places/:id/flags → bulk resolve/dismiss for a place
+GET   /api/admin/places
 PATCH /api/admin/places/:id
 POST  /api/admin/places/merge
 PATCH /api/admin/users/:id
+
+`GET /api/admin/places` requires at least one of `name`, `postalCode`, `addressLine1`, or `placeId` for search; multiple fields narrow results with AND logic.
 
 ⸻
 
@@ -607,13 +638,15 @@ PATCH /api/admin/users/:id
 ├── Create new place
 └── Submit multiplier
 /account
-├── My reports
-├── My places
+├── My reports (30-day window, active/archive)
+├── My flags (30-day window, active/archive)
 └── Account settings
 /admin
 ├── Data overview
 ├── Suspicious reports
 ├── Place flags
+├── Places lookup (name/postal/address)
+├── Moderator place view (geocode + edit current place)
 ├── Duplicate places
 └── User management
 
@@ -742,6 +775,7 @@ Baseline controls:
 Recommended initial limits:
 
 Maximum 20 reports per user per day
+Minimum 60 seconds between report submissions from the same account
 Maximum 5 new places per user per day
 One report per user, place, and 24-hour period
 Maximum 50 write requests per IP per hour
@@ -1069,8 +1103,6 @@ Add:
 * Montreal
 * Calgary
 * Ottawa
-* User reputation
-* Redis caching and rate limiting
 * Map clustering
 * Duplicate-place detection
 * Email notifications
@@ -1245,3 +1277,52 @@ Read precomputed summaries instead of aggregating on every request
 Load data by map region
 Scale through caching and database improvements first
 Extract services only when real operational needs appear
+
+⸻
+
+27. Recent Delivery Summary (2026 Q2)
+
+Shipped since the initial MVP — condensed:
+
+| Area | What changed |
+| --- | --- |
+| **Reputation** | Automatic score updates on report submit/delete, staff approval/removal, and flag resolve/dismiss. Floor at −10 blocks new reports and flags. Admins can override score on the Users tab. |
+| **Rate limits** | 60-second minimum between report submissions per account (in addition to daily and per-place limits). |
+| **Account** | `/account` lists reports and flags from the last 30 days with Active/Archive tabs; short-lived Redis cache per user; pending error/new-location reports can be withdrawn. |
+| **Place detail** | Recent reports returned and displayed as groups (multiplier + payment context); unique reporter count vs total submissions. |
+| **Admin flags** | `GET /api/admin/flags` returns `{ flagGroups }`. One resolve/dismiss clears all open flags on a place; reputation adjusted once per reporter per review. |
+| **Admin places** | Search by name, postal, address, or UUID; AND narrowing when multiple fields are set. |
+| **Geocoding** | Tiered lookup (postal → address → name + city); Mapbox + Nominatim + Search Box POI; city-name street noise filtered; strict municipality match (no cross-city metro bleed). |
+| **Caching** | User account list keys; admin flag cache; map version bump unchanged. |
+
+Implementation pattern throughout: pure helpers in `lib/`, orchestration in `server/services/`, thin route handlers, Vitest coverage on scoring/grouping/parsing rules.
+
+⸻
+
+28. Near-Term Roadmap
+
+**Next (quality and ops)**
+
+* Deduplicate geocode results that share coordinates (e.g. Search Box + Nominatim for the same storefront).
+* Email or in-app notifications when staff action a user's report or flag.
+* Expand E2E coverage for submit → moderate → reputation flows.
+* Wire Sentry (replace `lib/monitoring/sentry.ts` stub) and basic PostHog funnels.
+
+**Medium term (product)**
+
+* Duplicate-place suggestions surfaced to moderators (PostGIS distance + normalized name).
+* Background summary refresh when report volume grows.
+* Optional second card product (schema already supports `card_product_id`).
+* Broader city rollout beyond initial seed data.
+
+**Later (scale — only when traffic warrants)**
+
+* Read replicas and connection pooling.
+* Dedicated search index if Postgres text search becomes a bottleneck.
+* Extract geocoding or moderation into a worker only if API latency or provider rate limits require it.
+
+**Explicit non-goals for the next phase**
+
+* Screenshots/OCR, microservices, native apps, gift-card inventory, payments.
+
+The architecture remains a **modular monolith**: add capabilities behind services and cache boundaries first; split processes only when measured cost or reliability demands it.
