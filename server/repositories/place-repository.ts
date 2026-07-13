@@ -4,7 +4,7 @@ import { DEFAULT_CARD_SLUG, DUPLICATE_DETECTION } from "@/config/constants";
 import { parseGeoLocation } from "@/lib/map/parse-location";
 import { normalizeMerchantName, nameSimilarity } from "@/lib/utils";
 import type { CreatePlaceInput } from "@/server/validation/schemas";
-import type { MapPlace, PlaceDetail, PlaceSummary } from "@/types/domain";
+import type { AdminPlaceDetail, MapPlace, MultiplierValue, PlaceDetail, PlaceSummary } from "@/types/domain";
 
 export class PlaceRepository {
   async getDefaultCardProductId(): Promise<string> {
@@ -135,6 +135,150 @@ export class PlaceRepository {
     return this.mapPlaceDetail(place, summary);
   }
 
+  async findReportClassificationMeta(placeId: string) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("places")
+      .select("created_by")
+      .eq("id", placeId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return { createdBy: data.created_by as string | null };
+  }
+
+  async findSummaryMultiplier(placeId: string, cardProductId: string) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("place_multiplier_summaries")
+      .select("current_multiplier")
+      .eq("place_id", placeId)
+      .eq("card_product_id", cardProductId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data?.current_multiplier) return null;
+
+    return {
+      currentMultiplier: parseInt(
+        data.current_multiplier as string,
+        10,
+      ) as MultiplierValue,
+    };
+  }
+
+  async findByIdForAdmin(id: string): Promise<AdminPlaceDetail | null> {
+    const supabase = createAdminClient();
+    const cardProductId = await this.getDefaultCardProductId();
+
+    const { data: place, error } = await supabase
+      .from("places")
+      .select(
+        `
+        *,
+        merchant_brands ( name ),
+        creator:profiles!created_by ( username )
+      `,
+      )
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Admin place query failed: ${error.message}`);
+    }
+    if (!place) return null;
+
+    const { data: summary } = await supabase
+      .from("place_multiplier_summaries")
+      .select("*")
+      .eq("place_id", id)
+      .eq("card_product_id", cardProductId)
+      .maybeSingle();
+
+    const { count: openFlagCount } = await supabase
+      .from("place_flags")
+      .select("id", { count: "exact", head: true })
+      .eq("place_id", id)
+      .eq("status", "open");
+
+    const detail = this.mapPlaceDetail(place, summary);
+    const creator = place.creator as { username: string | null } | null;
+
+    return {
+      ...detail,
+      normalizedName: place.normalized_name as string,
+      externalPlaceId: place.external_place_id as string | null,
+      createdBy: place.created_by as string | null,
+      createdByUsername: creator?.username ?? null,
+      createdAt: place.created_at as string,
+      updatedAt: place.updated_at as string,
+      cardProductId,
+      openFlagCount: openFlagCount ?? 0,
+    };
+  }
+
+  async upsertSummaryForAdmin(
+    placeId: string,
+    cardProductId: string,
+    updates: {
+      confidenceLevel?: string;
+      confidenceScore?: number;
+      currentMultiplier?: number;
+    },
+  ) {
+    const supabase = createAdminClient();
+    const dbUpdates: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (updates.confidenceLevel) {
+      dbUpdates.confidence_level = updates.confidenceLevel;
+    }
+    if (updates.confidenceScore !== undefined) {
+      dbUpdates.confidence_score = updates.confidenceScore;
+    }
+    if (updates.currentMultiplier !== undefined) {
+      dbUpdates.current_multiplier = updates.currentMultiplier.toString();
+    }
+
+    const { data: existing } = await supabase
+      .from("place_multiplier_summaries")
+      .select("place_id")
+      .eq("place_id", placeId)
+      .eq("card_product_id", cardProductId)
+      .maybeSingle();
+
+    if (existing) {
+      const { data, error } = await supabase
+        .from("place_multiplier_summaries")
+        .update(dbUpdates)
+        .eq("place_id", placeId)
+        .eq("card_product_id", cardProductId)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return data;
+    }
+
+    const { data, error } = await supabase
+      .from("place_multiplier_summaries")
+      .insert({
+        place_id: placeId,
+        card_product_id: cardProductId,
+        confidence_level: updates.confidenceLevel ?? "insufficient",
+        confidence_score: updates.confidenceScore ?? 0,
+        current_multiplier: updates.currentMultiplier?.toString() ?? null,
+        ...dbUpdates,
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
   private mapPlaceDetail(
     place: Record<string, unknown>,
     summary: Record<string, unknown> | null,
@@ -235,6 +379,58 @@ export class PlaceRepository {
         nameSimilarity(p.name, input.name) >=
         DUPLICATE_DETECTION.nameSimilarityThreshold,
     );
+  }
+
+  async searchForAdmin(options: {
+    query?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  } = {}) {
+    const supabase = createAdminClient();
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.min(50, Math.max(1, options.pageSize ?? 10));
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase
+      .from("places")
+      .select(
+        "id, name, address_line1, city, province, postal_code, category, status, created_at",
+        { count: "exact" },
+      )
+      .order("created_at", { ascending: false });
+
+    if (options.status) {
+      query = query.eq("status", options.status);
+    }
+
+    const trimmedQuery = options.query?.trim();
+    if (trimmedQuery) {
+      const uuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidPattern.test(trimmedQuery)) {
+        query = query.eq("id", trimmedQuery);
+      } else {
+        const escaped = trimmedQuery.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+        const pattern = `%${escaped}%`;
+        query = query.or(
+          `name.ilike.${pattern},address_line1.ilike.${pattern},city.ilike.${pattern},postal_code.ilike.${pattern}`,
+        );
+      }
+    }
+
+    const { data, error, count } = await query.range(from, to);
+    if (error) {
+      throw new Error(`Admin places query failed: ${error.message}`);
+    }
+
+    return {
+      places: data ?? [],
+      total: count ?? 0,
+      page,
+      pageSize,
+    };
   }
 }
 

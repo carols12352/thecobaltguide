@@ -3,14 +3,18 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountDashboard } from "@/components/account/account-dashboard";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
-import type { MultiplierReport } from "@/types/domain";
+import type { MultiplierReport, UserRole } from "@/types/domain";
 
 export default function AccountPage() {
   const router = useRouter();
   const [reports, setReports] = useState<MultiplierReport[]>([]);
   const [email, setEmail] = useState<string | null>(null);
+  const [role, setRole] = useState<UserRole>("user");
   const [loading, setLoading] = useState(true);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -25,6 +29,16 @@ export default function AccountPage() {
       }
 
       setEmail(user.email ?? "Signed-in user");
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profile?.role) {
+        setRole(profile.role as UserRole);
+      }
 
       const res = await fetch("/api/me/reports");
       if (res.ok) {
@@ -45,12 +59,20 @@ export default function AccountPage() {
     router.refresh();
   }
 
-  async function deleteReport(id: string) {
-    if (!confirm("Remove this report?")) return;
-    const res = await fetch(`/api/me/reports/${id}`, { method: "DELETE" });
+  async function confirmDeleteReport() {
+    if (!deleteTargetId) return;
+
+    setDeleting(true);
+    const res = await fetch(`/api/me/reports/${deleteTargetId}`, {
+      method: "DELETE",
+    });
+
     if (res.ok) {
-      setReports((prev) => prev.filter((report) => report.id !== id));
+      setReports((prev) => prev.filter((report) => report.id !== deleteTargetId));
     }
+
+    setDeleting(false);
+    setDeleteTargetId(null);
   }
 
   if (loading || !email) {
@@ -62,11 +84,24 @@ export default function AccountPage() {
   }
 
   return (
-    <AccountDashboard
-      email={email}
-      reports={reports}
-      onSignOut={signOut}
-      onDeleteReport={deleteReport}
-    />
+    <>
+      <AccountDashboard
+        email={email}
+        role={role}
+        reports={reports}
+        onSignOut={signOut}
+        onDeleteReport={setDeleteTargetId}
+      />
+
+      <ConfirmDialog
+        open={deleteTargetId !== null}
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={confirmDeleteReport}
+        title="Remove this report?"
+        description="This report will be removed from the community summary for this merchant."
+        confirmLabel="Remove report"
+        loading={deleting}
+      />
+    </>
   );
 }

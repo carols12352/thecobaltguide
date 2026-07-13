@@ -1,4 +1,5 @@
 import {
+  jsonAdmin,
   jsonError,
   jsonForbidden,
   jsonUnauthorized,
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       parsed.data.reason,
     );
 
-    return Response.json(result);
+    return jsonAdmin(result);
   } catch (error) {
     if (error instanceof AuthError) {
       return error.message.includes("Moderator")

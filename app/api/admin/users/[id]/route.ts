@@ -1,4 +1,5 @@
 import {
+  jsonAdmin,
   jsonError,
   jsonForbidden,
   jsonUnauthorized,
@@ -29,7 +30,7 @@ export async function PATCH(
       admin.id,
     );
 
-    return Response.json({ profile });
+    return jsonAdmin({ profile });
   } catch (error) {
     if (error instanceof AuthError) {
       return error.message.includes("Admin")

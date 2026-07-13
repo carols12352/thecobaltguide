@@ -1,14 +1,19 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
+import { SecuritySettings } from "@/components/account/security-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { isModeratorOrAbove } from "@/lib/auth/permissions";
+import { formatStaffRoleLabel, staffRoleArticle } from "@/lib/auth/role-label";
 import { formatDate, formatMultiplier } from "@/lib/utils";
-import type { MultiplierReport } from "@/types/domain";
+import type { MultiplierReport, UserRole } from "@/types/domain";
 
 interface AccountDashboardProps {
   email: string;
+  role: UserRole;
   reports: MultiplierReport[];
   onSignOut: () => void;
   onDeleteReport: (id: string) => void;
@@ -16,11 +21,14 @@ interface AccountDashboardProps {
 
 export function AccountDashboard({
   email,
+  role,
   reports,
   onSignOut,
   onDeleteReport,
 }: AccountDashboardProps) {
   const activeReports = reports.filter((report) => report.status === "active");
+  const isStaff = isModeratorOrAbove(role);
+  const roleLabel = formatStaffRoleLabel(role);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -39,6 +47,25 @@ export function AccountDashboard({
             Sign out
           </Button>
         </div>
+
+        {isStaff ? (
+          <div className="mt-5 flex flex-col gap-3 rounded-xl border border-cobalt-200 bg-white/90 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-cobalt-900 dark:bg-zinc-950/60">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="default">
+                {roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1)}
+              </Badge>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                You are {staffRoleArticle(role)} {roleLabel}.
+              </p>
+            </div>
+            <Link
+              href="/admin"
+              className="text-sm font-medium text-cobalt-600 hover:underline dark:text-cobalt-400"
+            >
+              Go to admin →
+            </Link>
+          </div>
+        ) : null}
 
         <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-zinc-200/80 bg-white/80 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/80">
@@ -68,6 +95,16 @@ export function AccountDashboard({
           </div>
         </dl>
       </div>
+
+      <section className="mt-8">
+        <Suspense
+          fallback={
+            <p className="text-sm text-zinc-500">Loading security settings…</p>
+          }
+        >
+          <SecuritySettings />
+        </Suspense>
+      </section>
 
       <section className="mt-8">
         <h2 className="text-lg font-semibold">My reports</h2>

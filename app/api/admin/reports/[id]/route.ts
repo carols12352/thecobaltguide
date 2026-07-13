@@ -1,4 +1,5 @@
 import {
+  jsonAdmin,
   jsonError,
   jsonForbidden,
   jsonUnauthorized,
@@ -23,14 +24,19 @@ export async function PATCH(
       return jsonValidationError(parsed.error.flatten());
     }
 
-    const report = await moderationService.updateReportStatus(
+    if (parsed.data.approve) {
+      const result = await moderationService.approveReport(id, user.id);
+      return jsonAdmin(result);
+    }
+
+    const result = await moderationService.updateReportStatus(
       id,
-      parsed.data.status,
+      parsed.data.status!,
       user.id,
       parsed.data.moderationReason,
     );
 
-    return Response.json({ report });
+    return jsonAdmin(result);
   } catch (error) {
     if (error instanceof AuthError) {
       return error.message.includes("Moderator")

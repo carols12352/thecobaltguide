@@ -1,7 +1,13 @@
 import Link from "next/link";
+import { getSessionUser } from "@/lib/auth/session";
+import { isModeratorOrAbove } from "@/lib/auth/permissions";
 import { cn } from "@/lib/utils";
 
-export function Header() {
+export async function Header() {
+  const user = await getSessionUser();
+  const role = user?.profile?.role;
+  const showAdmin = role ? isModeratorOrAbove(role) : false;
+
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
@@ -13,6 +19,14 @@ export function Header() {
         </Link>
 
         <nav className="flex items-center gap-2">
+          {showAdmin ? (
+            <Link
+              href="/admin"
+              className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            >
+              Admin
+            </Link>
+          ) : null}
           <Link
             href="/account"
             className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
