@@ -1,10 +1,12 @@
 import type { GeocodingResult } from "@/types/domain";
+import { buildGeocodeQueries } from "@/lib/geocoding/address-query";
 
 export class GeocodingService {
   async searchAddress(query: string): Promise<GeocodingResult[]> {
     const token = process.env.MAPBOX_ACCESS_TOKEN;
     if (token) {
-      return this.searchMapbox(query, token);
+      const mapboxResults = await this.searchMapbox(query, token);
+      if (mapboxResults.length > 0) return mapboxResults;
     }
 
     return this.searchNominatim(query);
@@ -17,16 +19,14 @@ export class GeocodingService {
     province: string;
     postalCode: string;
   }): Promise<GeocodingResult[]> {
-    const parts = [
-      input.name,
-      input.addressLine1,
-      input.city,
-      input.province,
-      input.postalCode,
-      "Canada",
-    ].filter(Boolean);
+    const queries = buildGeocodeQueries(input);
 
-    return this.searchAddress(parts.join(", "));
+    for (const query of queries) {
+      const results = await this.searchAddress(query);
+      if (results.length > 0) return results;
+    }
+
+    return [];
   }
 
   private async searchMapbox(

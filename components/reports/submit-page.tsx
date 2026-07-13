@@ -6,9 +6,26 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { MERCHANT_CATEGORIES } from "@/config/categories";
+import {
+  CANADIAN_POSTAL_CODE_MESSAGE,
+  formatCanadianPostalCodeInput,
+} from "@/lib/validation/canadian-postal-code";
+import {
+  createPlaceSchema,
+  geocodeQuerySchema,
+} from "@/server/validation/schemas";
 import type { GeocodingResult } from "@/types/domain";
+
+function RequiredMark() {
+  return (
+    <span className="text-red-600" aria-hidden="true">
+      *
+    </span>
+  );
+}
 
 const LocationPicker = dynamic(
   () =>
@@ -41,16 +58,24 @@ export function SubmitReportPage() {
     setGeocodeError(null);
     setGeocodeResults([]);
     setCoordinates(null);
+
+    const parsed = geocodeQuerySchema.safeParse(newPlace);
+    if (!parsed.success) {
+      const postalError = parsed.error.flatten().fieldErrors.postalCode?.[0];
+      setGeocodeError(postalError ?? "Fill in all required address fields.");
+      return;
+    }
+
     setGeocodeLoading(true);
 
     try {
       const params = new URLSearchParams({
-        addressLine1: newPlace.addressLine1,
-        city: newPlace.city,
-        province: newPlace.province,
-        postalCode: newPlace.postalCode,
+        addressLine1: parsed.data.addressLine1,
+        city: parsed.data.city,
+        province: parsed.data.province,
+        postalCode: parsed.data.postalCode,
       });
-      if (newPlace.name.trim()) params.set("name", newPlace.name);
+      if (parsed.data.name) params.set("name", parsed.data.name);
 
       const res = await fetch(`/api/geocode?${params}`);
       if (!res.ok) throw new Error("Geocoding failed");
@@ -96,15 +121,27 @@ export function SubmitReportPage() {
       return;
     }
 
+    const parsed = createPlaceSchema.safeParse({
+      ...newPlace,
+      countryCode: "CA",
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
+    });
+
+    if (!parsed.success) {
+      const fieldErrors = parsed.error.flatten().fieldErrors;
+      setSubmitError(
+        fieldErrors.name?.[0] ??
+          fieldErrors.postalCode?.[0] ??
+          "Fill in all required fields before submitting.",
+      );
+      return;
+    }
+
     const res = await fetch("/api/places", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...newPlace,
-        countryCode: "CA",
-        latitude: coordinates.latitude,
-        longitude: coordinates.longitude,
-      }),
+      body: JSON.stringify(parsed.data),
     });
     const data = await res.json();
 
@@ -144,60 +181,104 @@ export function SubmitReportPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <form onSubmit={handleLookupLocation} className="space-y-3">
-            <Input
-              placeholder="Merchant name"
-              value={newPlace.name}
-              onChange={(e) =>
-                setNewPlace({ ...newPlace, name: e.target.value })
-              }
-              required
-            />
-            <Input
-              placeholder="Address"
-              value={newPlace.addressLine1}
-              onChange={(e) =>
-                setNewPlace({ ...newPlace, addressLine1: e.target.value })
-              }
-              required
-            />
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label htmlFor="place-name">Merchant name</Label>
               <Input
-                placeholder="City"
-                value={newPlace.city}
+                id="place-name"
+                placeholder="e.g. Walmart Supercenter"
+                value={newPlace.name}
                 onChange={(e) =>
-                  setNewPlace({ ...newPlace, city: e.target.value })
+                  setNewPlace({ ...newPlace, name: e.target.value })
                 }
-                required
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="place-address">
+                Address <RequiredMark />
+              </Label>
               <Input
-                placeholder="Province"
-                value={newPlace.province}
+                id="place-address"
+                placeholder="Street address"
+                value={newPlace.addressLine1}
                 onChange={(e) =>
-                  setNewPlace({ ...newPlace, province: e.target.value })
+                  setNewPlace({ ...newPlace, addressLine1: e.target.value })
                 }
                 required
               />
             </div>
-            <Input
-              placeholder="Postal code"
-              value={newPlace.postalCode}
-              onChange={(e) =>
-                setNewPlace({ ...newPlace, postalCode: e.target.value })
-              }
-              required
-            />
-            <Select
-              value={newPlace.category}
-              onChange={(e) =>
-                setNewPlace({ ...newPlace, category: e.target.value })
-              }
-            >
-              {MERCHANT_CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </Select>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="place-city">
+                  City <RequiredMark />
+                </Label>
+                <Input
+                  id="place-city"
+                  placeholder="City"
+                  value={newPlace.city}
+                  onChange={(e) =>
+                    setNewPlace({ ...newPlace, city: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="place-province">
+                  Province <RequiredMark />
+                </Label>
+                <Input
+                  id="place-province"
+                  placeholder="ON"
+                  value={newPlace.province}
+                  onChange={(e) =>
+                    setNewPlace({ ...newPlace, province: e.target.value })
+                  }
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="place-postal">
+                Postal code <RequiredMark />
+              </Label>
+              <Input
+                id="place-postal"
+                placeholder="A1A 1A1"
+                value={newPlace.postalCode}
+                onChange={(e) =>
+                  setNewPlace({
+                    ...newPlace,
+                    postalCode: formatCanadianPostalCodeInput(e.target.value),
+                  })
+                }
+                required
+                maxLength={7}
+                autoComplete="postal-code"
+                spellCheck={false}
+                aria-describedby="place-postal-hint"
+              />
+              <p id="place-postal-hint" className="text-xs text-zinc-500">
+                {CANADIAN_POSTAL_CODE_MESSAGE}. Only valid characters are accepted.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="place-category">
+                Category <RequiredMark />
+              </Label>
+              <Select
+                id="place-category"
+                value={newPlace.category}
+                onChange={(e) =>
+                  setNewPlace({ ...newPlace, category: e.target.value })
+                }
+                required
+              >
+                {MERCHANT_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <Button type="submit" variant="outline" disabled={geocodeLoading}>
               {geocodeLoading ? "Looking up…" : "Look up location"}
             </Button>
