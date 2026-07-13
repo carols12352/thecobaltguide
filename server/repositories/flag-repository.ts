@@ -34,6 +34,27 @@ export class FlagRepository {
     return data;
   }
 
+  async resolveOpenFlagsForPlace(
+    placeId: string,
+    resolvedBy: string,
+    status: "resolved" | "dismissed",
+  ) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("place_flags")
+      .update({
+        status,
+        resolved_by: resolvedBy,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("place_id", placeId)
+      .eq("status", "open")
+      .select("id");
+
+    if (error) throw error;
+    return data ?? [];
+  }
+
   async countOpenForPlace(placeId: string) {
     const supabase = createAdminClient();
     const { count, error } = await supabase

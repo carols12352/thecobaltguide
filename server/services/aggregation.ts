@@ -158,3 +158,22 @@ export function deriveConfidenceLevel(
   if (confidenceScore >= CONFIDENCE_THRESHOLDS.disputedBelow) return "medium";
   return "disputed";
 }
+
+/** Representative score when a moderator manually sets the public confidence level. */
+export function confidenceScoreForAdminLevel(level: ConfidenceLevel): number {
+  switch (level) {
+    case "insufficient":
+      return 0;
+    case "disputed":
+      return CONFIDENCE_THRESHOLDS.disputedBelow - 0.01;
+    case "medium":
+      return (
+        (CONFIDENCE_THRESHOLDS.disputedBelow + CONFIDENCE_THRESHOLDS.mediumBelow) /
+        2
+      );
+    case "high":
+      return CONFIDENCE_THRESHOLDS.mediumBelow + 0.05;
+    case "recently_confirmed":
+      return 0.95;
+  }
+}

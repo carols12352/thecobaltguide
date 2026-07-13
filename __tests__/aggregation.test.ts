@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateAggregation,
+  confidenceScoreForAdminLevel,
   deriveConfidenceLevel,
   getRecencyWeight,
 } from "@/server/services/aggregation";
@@ -96,6 +97,16 @@ describe("deriveConfidenceLevel", () => {
 
   it("returns recently_confirmed with multiple recent matching reports", () => {
     expect(deriveConfidenceLevel(0.9, 4, 2, 3)).toBe("recently_confirmed");
+  });
+});
+
+describe("confidenceScoreForAdminLevel", () => {
+  it("assigns a representative score for each admin-selected level", () => {
+    expect(confidenceScoreForAdminLevel("insufficient")).toBe(0);
+    expect(confidenceScoreForAdminLevel("disputed")).toBeCloseTo(0.59, 2);
+    expect(confidenceScoreForAdminLevel("medium")).toBeCloseTo(0.7, 2);
+    expect(confidenceScoreForAdminLevel("high")).toBeCloseTo(0.85, 2);
+    expect(confidenceScoreForAdminLevel("recently_confirmed")).toBe(0.95);
   });
 });
 

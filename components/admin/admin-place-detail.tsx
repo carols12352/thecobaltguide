@@ -2,10 +2,11 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -17,7 +18,24 @@ import {
   formatMultiplier,
   formatPlaceAddress,
 } from "@/lib/utils";
-import type { AdminPlaceDetail, ConfidenceLevel, MultiplierValue } from "@/types/domain";
+import { formatCanadianPostalCodeInput } from "@/lib/validation/canadian-postal-code";
+import {
+  fetchGeocodeLookup,
+  fetchReverseGeocode,
+  geocodeParamsFromForm,
+  geocodeSuccessMessage,
+  mergeGeocodeIntoAddressFields,
+  mergeReverseGeocodeIntoAddressFields,
+  resolveGeocodeAddressLine1,
+} from "@/lib/geocoding/client";
+import { geocodeQuerySchema } from "@/server/validation/schemas";
+import type {
+  AdminPlaceDetail,
+  AdminPlaceFlag,
+  ConfidenceLevel,
+  GeocodingResult,
+  MultiplierValue,
+} from "@/types/domain";
 
 const LocationPicker = dynamic(
   () =>
@@ -28,7 +46,53 @@ const LocationPicker = dynamic(
   },
 );
 
-function noop() {}
+function RequiredMark() {
+  return (
+    <span className="text-red-600" aria-hidden="true">
+      *
+    </span>
+  );
+}
+
+const FLAG_REASON_LABELS: Record<string, string> = {
+  duplicate: "Duplicate",
+  wrong_address: "Wrong address",
+  permanently_closed: "Permanently closed",
+  does_not_accept_amex: "Does not accept Amex",
+  incorrect_category: "Incorrect category",
+  other: "Other",
+};
+
+type AddressForm = {
+  addressLine1: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  latitude: number;
+  longitude: number;
+};
+
+function toAddressForm(place: AdminPlaceDetail): AddressForm {
+  return {
+    addressLine1: place.addressLine1,
+    city: place.city,
+    province: place.province,
+    postalCode: place.postalCode,
+    latitude: place.latitude,
+    longitude: place.longitude,
+  };
+}
+
+function addressChanged(place: AdminPlaceDetail, form: AddressForm): boolean {
+  return (
+    place.addressLine1 !== form.addressLine1 ||
+    place.city !== form.city ||
+    place.province !== form.province ||
+    place.postalCode !== form.postalCode ||
+    Math.abs(place.latitude - form.latitude) > 1e-6 ||
+    Math.abs(place.longitude - form.longitude) > 1e-6
+  );
+}
 
 export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
   const [place, setPlace] = useState<AdminPlaceDetail | null>(null);
@@ -36,9 +100,19 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [addressForm, setAddressForm] = useState<AddressForm | null>(null);
+  const [geocodeResults, setGeocodeResults] = useState<GeocodingResult[]>([]);
+  const [geocodeLoading, setGeocodeLoading] = useState(false);
+  const [pinGeocodeLoading, setPinGeocodeLoading] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  const [geocodeNotice, setGeocodeNotice] = useState<string | null>(null);
+  const pinGeocodeRequestRef = useRef(0);
+  const [resolvePromptOpen, setResolvePromptOpen] = useState(false);
+  const [resolvePromptCount, setResolvePromptCount] = useState(0);
+  const [resolvingFlags, setResolvingFlags] = useState(false);
   const [confidenceLevel, setConfidenceLevel] =
     useState<ConfidenceLevel>("insufficient");
-  const [confidenceScore, setConfidenceScore] = useState("0");
   const [currentMultiplier, setCurrentMultiplier] = useState<string>("");
 
   const loadPlace = useCallback(async () => {
@@ -56,8 +130,11 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     const data = await res.json();
     const loaded = data.place as AdminPlaceDetail;
     setPlace(loaded);
+    setAddressForm(toAddressForm(loaded));
+    setGeocodeResults([]);
+    setGeocodeError(null);
+    setGeocodeNotice(null);
     setConfidenceLevel(loaded.summary?.confidenceLevel ?? "insufficient");
-    setConfidenceScore(String(loaded.summary?.confidenceScore ?? 0));
     setCurrentMultiplier(
       loaded.summary?.currentMultiplier
         ? String(loaded.summary.currentMultiplier)
@@ -71,6 +148,181 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     return () => window.clearTimeout(timeout);
   }, [loadPlace]);
 
+  async function lookupAddress(e: React.FormEvent) {
+    e.preventDefault();
+    if (!place || !addressForm) return;
+
+    setGeocodeError(null);
+    setGeocodeNotice(null);
+    setGeocodeResults([]);
+
+    const lookupInput = geocodeParamsFromForm({
+      name: place.name,
+      addressLine1: addressForm.addressLine1,
+      city: addressForm.city,
+      province: addressForm.province,
+      postalCode: addressForm.postalCode,
+    });
+    const parsed = geocodeQuerySchema.safeParse(lookupInput);
+
+    if (!parsed.success) {
+      const postalError = parsed.error.flatten().fieldErrors.postalCode?.[0];
+      setGeocodeError(postalError ?? "Enter a valid postal code.");
+      return;
+    }
+
+    setGeocodeLoading(true);
+    try {
+      const { results, source } = await fetchGeocodeLookup(parsed.data);
+      if (results.length === 0) {
+        setGeocodeError("No matching location found. Check the postal code and try again.");
+        return;
+      }
+
+      setGeocodeResults(results.length > 1 ? results : []);
+      mergeGeocodeResult(results[0]!);
+      setGeocodeNotice(
+        results.length > 1
+          ? `${results.length} street matches found — pick the correct one if needed.`
+          : geocodeSuccessMessage(source, results[0]!),
+      );
+    } catch {
+      setGeocodeError("Could not look up that address.");
+    } finally {
+      setGeocodeLoading(false);
+    }
+  }
+
+  function mergeGeocodeResult(result: GeocodingResult) {
+    setAddressForm((current) =>
+      current ? mergeGeocodeIntoAddressFields(current, result) : current,
+    );
+    setGeocodeError(null);
+  }
+
+  function pickGeocodeResult(result: GeocodingResult) {
+    mergeGeocodeResult(result);
+    setGeocodeResults([]);
+    const street = resolveGeocodeAddressLine1(result);
+    setGeocodeNotice(
+      street
+        ? `Address updated to ${street}. Drag the pin if needed.`
+        : "Location updated. Drag the pin if needed.",
+    );
+  }
+
+  async function handlePinChange(latitude: number, longitude: number) {
+    const requestId = ++pinGeocodeRequestRef.current;
+
+    setAddressForm((current) =>
+      current ? { ...current, latitude, longitude } : current,
+    );
+    setPinGeocodeLoading(true);
+    setGeocodeError(null);
+    setGeocodeResults([]);
+
+    try {
+      const results = await fetchReverseGeocode(latitude, longitude);
+      if (requestId !== pinGeocodeRequestRef.current) return;
+
+      if (results.length === 0) {
+        setGeocodeNotice("Pin moved. No street address found at this location.");
+        return;
+      }
+
+      const result = results[0]!;
+      setAddressForm((current) =>
+        current
+          ? mergeReverseGeocodeIntoAddressFields(
+              { ...current, latitude, longitude },
+              result,
+            )
+          : current,
+      );
+
+      const street = resolveGeocodeAddressLine1(result);
+      setGeocodeNotice(
+        street
+          ? `Pin moved. Address updated to ${street}.`
+          : "Pin moved. City and postal code updated from map location.",
+      );
+    } catch {
+      if (requestId === pinGeocodeRequestRef.current) {
+        setGeocodeNotice("Pin moved. Could not look up address for this location.");
+      }
+    } finally {
+      if (requestId === pinGeocodeRequestRef.current) {
+        setPinGeocodeLoading(false);
+      }
+    }
+  }
+
+  async function saveAddress(e: React.FormEvent) {
+    e.preventDefault();
+    if (!place || !addressForm) return;
+
+    setSaveError(null);
+    setSavingAddress(true);
+
+    const res = await fetch(`/api/admin/places/${placeId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        addressLine1: addressForm.addressLine1,
+        city: addressForm.city,
+        province: addressForm.province,
+        postalCode: addressForm.postalCode,
+        latitude: addressForm.latitude,
+        longitude: addressForm.longitude,
+      }),
+    });
+
+    setSavingAddress(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setSaveError(data?.error ?? "Could not save address.");
+      return;
+    }
+
+    const data = await res.json();
+    const updated = data.place as AdminPlaceDetail;
+    setPlace(updated);
+    setAddressForm(toAddressForm(updated));
+
+    if (updated.openFlagCount > 0) {
+      setResolvePromptCount(updated.openFlagCount);
+      setResolvePromptOpen(true);
+    }
+  }
+
+  async function resolveOpenFlags(status: "resolved" | "dismissed") {
+    setResolvingFlags(true);
+    setSaveError(null);
+
+    const res = await fetch(`/api/admin/places/${placeId}/flags`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+
+    setResolvingFlags(false);
+    setResolvePromptOpen(false);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      setSaveError(data?.error ?? "Could not update flags.");
+      return;
+    }
+
+    const data = await res.json();
+    if (data.place) {
+      setPlace(data.place as AdminPlaceDetail);
+    } else {
+      await loadPlace();
+    }
+  }
+
   async function saveSummary(e: React.FormEvent) {
     e.preventDefault();
     setSaveError(null);
@@ -82,7 +334,6 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
       body: JSON.stringify({
         summary: {
           confidenceLevel,
-          confidenceScore: Number(confidenceScore),
           ...(currentMultiplier
             ? { currentMultiplier: Number(currentMultiplier) }
             : {}),
@@ -102,9 +353,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     setPlace(data.place as AdminPlaceDetail);
   }
 
-  async function updateStatus(
-    status: AdminPlaceDetail["status"],
-  ) {
+  async function updateStatus(status: AdminPlaceDetail["status"]) {
     setSaveError(null);
     const res = await fetch(`/api/admin/places/${placeId}`, {
       method: "PATCH",
@@ -130,7 +379,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     );
   }
 
-  if (error || !place) {
+  if (error || !place || !addressForm) {
     return (
       <AdminPlaceShell>
         <p className="text-red-600">{error ?? "Place not found."}</p>
@@ -143,7 +392,10 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     );
   }
 
-  const mapsUrl = `https://www.google.com/maps?q=${place.latitude},${place.longitude}`;
+  const mapsUrl = `https://www.google.com/maps?q=${addressForm.latitude},${addressForm.longitude}`;
+  const addressDirty = addressChanged(place, addressForm);
+  const openFlags = place.flags.filter((flag) => flag.status === "open");
+  const reviewedFlags = place.flags.filter((flag) => flag.status !== "open");
 
   return (
     <AdminPlaceShell>
@@ -199,85 +451,254 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <h2 className="font-semibold">Exact location</h2>
+              <h2 className="font-semibold">Address & location</h2>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Full coordinates and map pin — not shown on the public page.
+                Only postal code is required for lookup. Street address, city,
+                and province fill in from the result; the merchant name helps
+                match the correct business. Drag the pin to fine-tune.
               </p>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
+              <form onSubmit={(e) => void lookupAddress(e)} className="grid gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="address-line1">Address line 1</Label>
+                  <Input
+                    id="address-line1"
+                    value={addressForm.addressLine1}
+                    onChange={(e) =>
+                      setAddressForm({
+                        ...addressForm,
+                        addressLine1: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="address-city">City</Label>
+                    <Input
+                      id="address-city"
+                      value={addressForm.city}
+                      onChange={(e) =>
+                        setAddressForm({ ...addressForm, city: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="address-province">Province</Label>
+                    <Input
+                      id="address-province"
+                      value={addressForm.province}
+                      onChange={(e) =>
+                        setAddressForm({
+                          ...addressForm,
+                          province: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="address-postal">
+                    Postal code <RequiredMark />
+                  </Label>
+                  <Input
+                    id="address-postal"
+                    value={addressForm.postalCode}
+                    onChange={(e) =>
+                      setAddressForm({
+                        ...addressForm,
+                        postalCode: formatCanadianPostalCodeInput(e.target.value),
+                      })
+                    }
+                    required
+                    maxLength={7}
+                  />
+                </div>
+                <Button type="submit" variant="outline" disabled={geocodeLoading}>
+                  {geocodeLoading ? "Looking up…" : "Look up location"}
+                </Button>
+                {geocodeError ? (
+                  <p className="text-sm text-red-600">{geocodeError}</p>
+                ) : null}
+                {geocodeNotice ? (
+                  <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                    {geocodeNotice}
+                  </p>
+                ) : null}
+              </form>
+
+              {geocodeResults.length > 1 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Multiple matches — pick the correct one:
+                  </p>
+                  <div className="space-y-2">
+                    {geocodeResults.map((result) => (
+                      <button
+                        key={result.externalPlaceId}
+                        type="button"
+                        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:border-cobalt-500 dark:border-zinc-700"
+                        onClick={() => pickGeocodeResult(result)}
+                      >
+                        {resolveGeocodeAddressLine1(result) ||
+                          `${result.latitude.toFixed(5)}, ${result.longitude.toFixed(5)}`}
+                        {result.city ? `, ${result.city}` : ""}
+                        {result.province ? `, ${result.province}` : ""}{" "}
+                        {result.postalCode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <dl className="grid grid-cols-2 gap-3 text-sm">
-                <MetadataItem label="Latitude" value={place.latitude.toFixed(6)} />
-                <MetadataItem label="Longitude" value={place.longitude.toFixed(6)} />
-                <MetadataItem label="Postal code" value={place.postalCode} />
-                <MetadataItem label="Country" value={place.countryCode} />
+                <MetadataItem
+                  label="Latitude"
+                  value={addressForm.latitude.toFixed(6)}
+                />
+                <MetadataItem
+                  label="Longitude"
+                  value={addressForm.longitude.toFixed(6)}
+                />
               </dl>
+
               <LocationPicker
-                latitude={place.latitude}
-                longitude={place.longitude}
-                onChange={noop}
-                readOnly
+                latitude={addressForm.latitude}
+                longitude={addressForm.longitude}
+                onChange={(latitude, longitude) => void handlePinChange(latitude, longitude)}
               />
+              {pinGeocodeLoading ? (
+                <p className="text-xs text-zinc-500">Looking up address for pin location…</p>
+              ) : null}
+
+              <form onSubmit={(e) => void saveAddress(e)}>
+                <Button type="submit" disabled={savingAddress || !addressDirty}>
+                  {savingAddress ? "Saving…" : "Save address"}
+                </Button>
+              </form>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <h2 className="font-semibold">Internal metadata</h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Moderator-only identifiers and audit fields.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <dl className="space-y-3 text-sm">
-                <MetadataItem label="Place ID" value={place.id} mono />
-                <MetadataItem
-                  label="Normalized name"
-                  value={place.normalizedName}
-                  mono
-                />
-                <MetadataItem
-                  label="External place ID"
-                  value={place.externalPlaceId ?? "—"}
-                  mono
-                />
-                <MetadataItem
-                  label="Created by"
-                  value={
-                    place.createdByUsername
-                      ? `${place.createdByUsername} (${place.createdBy})`
-                      : (place.createdBy ?? "—")
-                  }
-                  mono={Boolean(place.createdBy)}
-                />
-                <MetadataItem label="Created" value={formatDate(place.createdAt)} />
-                <MetadataItem label="Updated" value={formatDate(place.updatedAt)} />
-                <MetadataItem label="Brand" value={place.brandName ?? "—"} />
-                <MetadataItem
-                  label="Accepts Amex"
-                  value={
-                    place.acceptsAmex == null
-                      ? "Unknown"
-                      : place.acceptsAmex
-                        ? "Yes"
-                        : "No"
-                  }
-                />
-              </dl>
-            </CardContent>
-          </Card>
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <h2 className="font-semibold">Flags</h2>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Community reports that need moderator review for this place.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {openFlags.length > 0 ? (
+                  openFlags.map((flag) => (
+                    <FlagReviewCard key={flag.id} flag={flag} />
+                  ))
+                ) : (
+                  <p className="text-sm text-zinc-500">No open flags.</p>
+                )}
+
+                {reviewedFlags.length > 0 ? (
+                  <div className="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      Review history
+                    </p>
+                    {reviewedFlags.map((flag) => (
+                      <FlagReviewCard key={flag.id} flag={flag} />
+                    ))}
+                  </div>
+                ) : null}
+
+                {openFlags.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Button
+                      size="sm"
+                      disabled={resolvingFlags}
+                      onClick={() => void resolveOpenFlags("resolved")}
+                    >
+                      Mark all resolved
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={resolvingFlags}
+                      onClick={() => void resolveOpenFlags("dismissed")}
+                    >
+                      Dismiss all
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <h2 className="font-semibold">Internal metadata</h2>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Moderator-only identifiers and audit fields.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <dl className="space-y-3 text-sm">
+                  <MetadataItem label="Place ID" value={place.id} mono />
+                  <MetadataItem
+                    label="Normalized name"
+                    value={place.normalizedName}
+                    mono
+                  />
+                  <MetadataItem
+                    label="External place ID"
+                    value={place.externalPlaceId ?? "—"}
+                    mono
+                  />
+                  <MetadataItem
+                    label="Created by"
+                    value={
+                      place.createdByUsername
+                        ? `${place.createdByUsername} (${place.createdBy})`
+                        : (place.createdBy ?? "—")
+                    }
+                    mono={Boolean(place.createdBy)}
+                  />
+                  <MetadataItem label="Created" value={formatDate(place.createdAt)} />
+                  <MetadataItem label="Updated" value={formatDate(place.updatedAt)} />
+                  <MetadataItem label="Brand" value={place.brandName ?? "—"} />
+                  <MetadataItem
+                    label="Accepts Amex"
+                    value={
+                      place.acceptsAmex == null
+                        ? "Unknown"
+                        : place.acceptsAmex
+                          ? "Yes"
+                          : "No"
+                    }
+                  />
+                </dl>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         <Card className="mt-6">
           <CardHeader>
             <h2 className="font-semibold">Multiplier summary</h2>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Manually override confidence and displayed multiplier. New community
-              reports may recalculate scores unless you adjust again.
+              Override the public confidence badge and displayed multiplier. The
+              score shown below is computed automatically from the level you
+              pick. New community reports may recalculate both unless you adjust
+              again.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
             {place.summary ? (
               <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <MetadataItem
+                  label="Confidence score"
+                  value={
+                    place.summary.confidenceScore != null
+                      ? place.summary.confidenceScore.toFixed(2)
+                      : "—"
+                  }
+                />
                 <MetadataItem
                   label="Recent reports"
                   value={String(place.summary.recentReportCount)}
@@ -299,7 +720,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
               <p className="text-sm text-zinc-500">No summary row yet — save to create one.</p>
             )}
 
-            <form onSubmit={(e) => void saveSummary(e)} className="grid gap-4 sm:grid-cols-3">
+            <form onSubmit={(e) => void saveSummary(e)} className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor="confidence-level">Confidence level</Label>
                 <Select
@@ -315,19 +736,9 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
                     </option>
                   ))}
                 </Select>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="confidence-score">Confidence score (0–1)</Label>
-                <Input
-                  id="confidence-score"
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={confidenceScore}
-                  onChange={(e) => setConfidenceScore(e.target.value)}
-                  required
-                />
+                <p className="text-xs text-zinc-500">
+                  This is what users see on the map and place pages.
+                </p>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="current-multiplier">Current multiplier</Label>
@@ -344,7 +755,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
                   ))}
                 </Select>
               </div>
-              <div className="sm:col-span-3">
+              <div className="sm:col-span-2">
                 <Button type="submit" disabled={saving}>
                   {saving ? "Saving…" : "Save summary overrides"}
                 </Button>
@@ -379,7 +790,83 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={resolvePromptOpen}
+        onClose={() => setResolvePromptOpen(false)}
+        title="Mark flags resolved?"
+      >
+        <p>
+          Address saved. Do you want to mark{" "}
+          <strong>
+            {resolvePromptCount} open flag
+            {resolvePromptCount === 1 ? "" : "s"}
+          </strong>{" "}
+          as resolved? Your moderator name will be recorded as the reviewer.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={resolvingFlags}
+            onClick={() => setResolvePromptOpen(false)}
+          >
+            Not now
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={resolvingFlags}
+            onClick={() => void resolveOpenFlags("dismissed")}
+          >
+            Dismiss instead
+          </Button>
+          <Button
+            type="button"
+            disabled={resolvingFlags}
+            onClick={() => void resolveOpenFlags("resolved")}
+          >
+            {resolvingFlags ? "Saving…" : "Mark resolved"}
+          </Button>
+        </div>
+      </Dialog>
     </AdminPlaceShell>
+  );
+}
+
+function FlagReviewCard({ flag }: { flag: AdminPlaceFlag }) {
+  const statusLabel =
+    flag.status === "open"
+      ? "Open"
+      : flag.status === "resolved"
+        ? "Resolved"
+        : "Dismissed";
+
+  return (
+    <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-medium">
+          {FLAG_REASON_LABELS[flag.reason] ?? flag.reason}
+        </p>
+        <Badge variant={flag.status === "open" ? "warning" : "muted"}>
+          {statusLabel}
+        </Badge>
+      </div>
+      <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        Flagged by {flag.reporterUsername ?? "unknown"} ·{" "}
+        {formatDate(flag.createdAt)}
+      </p>
+      {flag.details ? (
+        <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+          {flag.details}
+        </p>
+      ) : null}
+      {flag.reviewedByUsername && flag.resolvedAt ? (
+        <p className="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+          Reviewed by {flag.reviewedByUsername} · {formatDate(flag.resolvedAt)}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

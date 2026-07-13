@@ -174,6 +174,39 @@ export class ModerationService {
     return { flag, clearedReports, placeId: flag.place_id as string };
   }
 
+  async resolveOpenFlagsForPlace(
+    placeId: string,
+    moderatorId: string,
+    status: "resolved" | "dismissed",
+  ) {
+    const resolved = await flagRepository.resolveOpenFlagsForPlace(
+      placeId,
+      moderatorId,
+      status,
+    );
+    let clearedReports = false;
+
+    if (resolved.length > 0) {
+      const openCount = await flagRepository.countOpenForPlace(placeId);
+      if (openCount === 0) {
+        await reportRepository.clearFlaggedForPlace(placeId);
+        clearedReports = true;
+      }
+      await invalidatePlaceReadCaches(placeId);
+      await invalidateAdminCaches();
+      await this.logAction(
+        moderatorId,
+        "place",
+        placeId,
+        `resolve_flags_${status}`,
+        undefined,
+        { flagIds: resolved.map((flag) => flag.id) },
+      );
+    }
+
+    return { resolvedFlagIds: resolved.map((flag) => flag.id), clearedReports };
+  }
+
   async getPlaceForAdmin(placeId: string) {
     const cached = await getCachedAdminPlaceDetail(placeId);
     if (cached) return cached;
@@ -191,7 +224,6 @@ export class ModerationService {
     const summaryUpdates = updates.summary as
       | {
           confidenceLevel?: string;
-          confidenceScore?: number;
           currentMultiplier?: number;
         }
       | undefined;
@@ -242,6 +274,12 @@ export class ModerationService {
     if (updates.category) dbUpdates.category = updates.category;
     if (updates.acceptsAmex !== undefined) dbUpdates.accepts_amex = updates.acceptsAmex;
     if (updates.status) dbUpdates.status = updates.status;
+    if (
+      typeof updates.latitude === "number" &&
+      typeof updates.longitude === "number"
+    ) {
+      dbUpdates.location = `SRID=4326;POINT(${updates.longitude} ${updates.latitude})`;
+    }
 
     const { data, error } = await supabase
       .from("places")
