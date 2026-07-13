@@ -14,6 +14,8 @@ export const RATE_LIMITS = {
   maxReportsPerUserPerDay: 20,
   maxPlacesPerUserPerDay: 5,
   maxWriteRequestsPerIpPerHour: 50,
+  /** Minimum seconds between any two report submissions from the same account. */
+  minSecondsBetweenUserReports: 60,
   oneReportPerPlacePerDay: true,
 } as const;
 
@@ -47,6 +49,8 @@ export const CACHE_DURATIONS = {
   brandCategorySeconds: 86400,
   adminListSeconds: 120,
   adminPlaceDetailSeconds: 120,
+  /** Per-user account reports/flags lists on /account. */
+  userAccountListSeconds: 120,
 } as const;
 
 /** CDN edge cache TTLs — short so Redis version bumps propagate quickly. */

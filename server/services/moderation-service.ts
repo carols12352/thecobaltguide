@@ -17,7 +17,13 @@ import {
   setCachedAdminUsers,
 } from "@/lib/cache/admin-cache";
 import { invalidatePlaceReadCaches } from "@/lib/cache/place-cache";
+import { invalidateUserAccountCaches } from "@/lib/cache/user-account-cache";
 import { summaryService } from "@/server/services/summary-service";
+import { reputationService } from "@/server/services/reputation-service";
+import {
+  groupAdminFlags,
+  uniqueReporterIdsForReview,
+} from "@/lib/flags/admin-flag-groups";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CreateFlagInput } from "@/server/validation/schemas";
 
@@ -39,10 +45,22 @@ export class ModerationService {
     moderatorId: string,
     moderationReason?: string,
   ) {
+    const existing = await reportRepository.findById(reportId);
+    if (!existing) {
+      throw new Error("Report not found");
+    }
+
     const report = await reportRepository.adminUpdateStatus(
       reportId,
       status,
       moderationReason,
+    );
+
+    await reputationService.onModeratorReportStatusChange(
+      existing.userId,
+      existing.reportKind,
+      existing.status,
+      status,
     );
 
     let flag: Awaited<ReturnType<typeof flagRepository.create>> | null = null;
@@ -75,7 +93,13 @@ export class ModerationService {
   }
 
   async approveReport(reportId: string, moderatorId: string) {
+    const existing = await reportRepository.findById(reportId);
+    if (!existing) {
+      throw new Error("Report not found");
+    }
+
     const report = await reportRepository.approveReport(reportId, moderatorId);
+    await reputationService.onReportApproved(existing.userId, existing.reportKind);
     const dismissed = await flagRepository.dismissOpenFlagsForPlace(
       report.placeId,
       moderatorId,
@@ -101,8 +125,16 @@ export class ModerationService {
     return flags;
   }
 
+  async getOpenFlagGroups(limit = 50) {
+    const flags = await this.getOpenFlags(limit);
+    return groupAdminFlags(flags);
+  }
+
   async getPlacesForAdmin(options: {
-    query?: string;
+    placeId?: string;
+    name?: string;
+    postalCode?: string;
+    addressLine1?: string;
     status?: string;
     page?: number;
     pageSize?: number;
@@ -110,7 +142,10 @@ export class ModerationService {
     const page = Math.max(1, options.page ?? 1);
     const pageSize = Math.min(50, Math.max(1, options.pageSize ?? 10));
     const cacheParams = {
-      query: options.query,
+      placeId: options.placeId,
+      name: options.name,
+      postalCode: options.postalCode,
+      addressLine1: options.addressLine1,
       status: options.status,
       page,
       pageSize,
@@ -157,21 +192,30 @@ export class ModerationService {
     status: "open" | "resolved" | "dismissed",
     moderatorId: string,
   ) {
-    const flag = await flagRepository.updateStatus(flagId, status, moderatorId);
-    let clearedReports = false;
-
-    if (status === "resolved" || status === "dismissed") {
-      const openCount = await flagRepository.countOpenForPlace(flag.place_id);
-      if (openCount === 0) {
-        await reportRepository.clearFlaggedForPlace(flag.place_id);
-        clearedReports = true;
-      }
-      await invalidatePlaceReadCaches(flag.place_id);
+    const existing = await flagRepository.findById(flagId);
+    if (!existing) {
+      throw new Error("Flag not found");
     }
 
+    if (status === "resolved" || status === "dismissed") {
+      const result = await this.resolveOpenFlagsForPlace(
+        existing.place_id as string,
+        moderatorId,
+        status,
+      );
+      const flag = await flagRepository.findById(flagId);
+      return {
+        flag,
+        clearedReports: result.clearedReports,
+        placeId: existing.place_id as string,
+        resolvedFlagIds: result.resolvedFlagIds,
+      };
+    }
+
+    const flag = await flagRepository.updateStatus(flagId, status, moderatorId);
     await invalidateAdminCaches();
     await this.logAction(moderatorId, "place_flag", flagId, status);
-    return { flag, clearedReports, placeId: flag.place_id as string };
+    return { flag, clearedReports: false, placeId: flag.place_id as string };
   }
 
   async resolveOpenFlagsForPlace(
@@ -179,11 +223,14 @@ export class ModerationService {
     moderatorId: string,
     status: "resolved" | "dismissed",
   ) {
+    const openFlags = await flagRepository.findOpenForPlaceWithReporters(placeId);
     const resolved = await flagRepository.resolveOpenFlagsForPlace(
       placeId,
       moderatorId,
       status,
     );
+
+    await this.applyFlagReviewReputation(openFlags, status);
     let clearedReports = false;
 
     if (resolved.length > 0) {
@@ -328,7 +375,7 @@ export class ModerationService {
 
   async updateUser(
     userId: string,
-    updates: { role?: string; status?: string },
+    updates: { role?: string; status?: string; reputationScore?: number },
     adminId: string,
   ) {
     const profile = await userRepository.updateProfile(userId, updates);
@@ -338,10 +385,21 @@ export class ModerationService {
   }
 
   async submitFlag(placeId: string, userId: string, input: CreateFlagInput) {
+    await reputationService.assertCanSubmit(userId);
     const flag = await flagRepository.create(placeId, userId, input);
     await invalidatePlaceReadCaches(placeId);
+    await invalidateUserAccountCaches(userId);
     await invalidateAdminCaches();
     return flag;
+  }
+
+  private async applyFlagReviewReputation(
+    openFlags: Array<{ user_id: string; status: string }>,
+    status: "resolved" | "dismissed",
+  ) {
+    for (const userId of uniqueReporterIdsForReview(openFlags)) {
+      await reputationService.onFlagReviewed(userId, "open", status);
+    }
   }
 
   private async logAction(

@@ -107,6 +107,14 @@ export async function checkUserReportRateLimit(userId: string) {
   );
 }
 
+export async function checkUserReportSubmitCooldown(userId: string) {
+  return checkRateLimit(
+    `user-report-submit:${userId}`,
+    1,
+    RATE_LIMITS.minSecondsBetweenUserReports * 1000,
+  );
+}
+
 export async function checkUserPlaceRateLimit(userId: string) {
   return checkRateLimit(
     `user-places:${userId}`,

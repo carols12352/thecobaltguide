@@ -68,10 +68,24 @@ export const geocodeQuerySchema = z
     addressLine1: z.string().trim().max(300).optional(),
     city: z.string().trim().max(100).optional(),
     province: z.string().trim().max(100).optional(),
-    postalCode: z.string().trim().min(1).max(20),
+    postalCode: z.string().trim().max(20).optional(),
   })
   .superRefine((data, ctx) => {
-    if (!isValidCanadianPostalCode(data.postalCode)) {
+    const name = data.name?.trim() ?? "";
+    const addressLine1 = data.addressLine1?.trim() ?? "";
+    const postalCode = data.postalCode?.trim() ?? "";
+
+    if (!name && !addressLine1 && !postalCode) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Enter a merchant name, postal code, or address to look up the location.",
+        path: ["postalCode"],
+      });
+      return;
+    }
+
+    if (postalCode && !isValidCanadianPostalCode(postalCode)) {
       ctx.addIssue({
         code: "custom",
         message: CANADIAN_POSTAL_CODE_MESSAGE,
@@ -84,7 +98,9 @@ export const geocodeQuerySchema = z
     addressLine1: data.addressLine1?.trim() || undefined,
     city: data.city?.trim() || undefined,
     province: data.province?.trim() || undefined,
-    postalCode: normalizeCanadianPostalCode(data.postalCode),
+    postalCode: data.postalCode?.trim()
+      ? normalizeCanadianPostalCode(data.postalCode)
+      : undefined,
   }));
 
 export const reverseGeocodeQuerySchema = z.object({
@@ -190,7 +206,44 @@ export const adminPlaceMergeSchema = z.object({
 export const adminUserPatchSchema = z.object({
   role: z.enum(["user", "moderator", "admin"]).optional(),
   status: z.enum(["active", "suspended"]).optional(),
+  reputationScore: z.number().int().min(-10_000).max(1_000_000).optional(),
 });
+
+export const adminPlaceSearchQuerySchema = z
+  .object({
+    placeId: z.string().uuid().optional(),
+    name: z.string().trim().max(200).optional(),
+    postalCode: z.string().trim().max(20).optional(),
+    addressLine1: z.string().trim().max(300).optional(),
+    status: z.string().trim().max(50).optional(),
+    page: z.coerce.number().min(1).default(1),
+    limit: z.coerce.number().min(1).max(50).default(10),
+  })
+  .superRefine((data, ctx) => {
+    const hasSearch = Boolean(
+      data.placeId ||
+        data.name?.trim() ||
+        data.postalCode?.trim() ||
+        data.addressLine1?.trim(),
+    );
+
+    if (!hasSearch) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide a name, postal code, or address.",
+        path: ["name"],
+      });
+    }
+  })
+  .transform((data) => ({
+    placeId: data.placeId,
+    name: data.name?.trim() || undefined,
+    postalCode: data.postalCode?.trim() || undefined,
+    addressLine1: data.addressLine1?.trim() || undefined,
+    status: data.status?.trim() || undefined,
+    page: data.page,
+    pageSize: data.limit,
+  }));
 
 export type ViewportQuery = z.infer<typeof viewportQuerySchema>;
 export type CreatePlaceInput = z.infer<typeof createPlaceSchema>;
