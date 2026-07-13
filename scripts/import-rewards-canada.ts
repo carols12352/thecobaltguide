@@ -6,12 +6,13 @@
  *   npx tsx scripts/import-rewards-canada.ts --geocode city
  *   npx tsx scripts/import-rewards-canada.ts --geocode precise
  *
- * Requires .env.local with NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.
+ * Requires .env.local with NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseSecretKey, getSupabaseUrl } from "../lib/supabase/env";
 import {
   confidenceForImport,
   fetchRewardsCanadaData,
@@ -73,9 +74,14 @@ async function main() {
   const { dryRun, limit, geocode, useLocal } = parseArgs();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  let serviceKey: string | undefined;
+  try {
+    serviceKey = getSupabaseSecretKey();
+  } catch {
+    serviceKey = undefined;
+  }
   if (!dryRun && (!supabaseUrl || !serviceKey)) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY");
   }
 
   const supabase =

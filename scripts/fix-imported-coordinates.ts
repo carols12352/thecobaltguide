@@ -6,6 +6,7 @@
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseSecretKey, getSupabaseUrl } from "../lib/supabase/env";
 import { spreadCoordinates } from "../lib/map/spread-coordinates";
 import { parseGeoLocation } from "../lib/map/parse-location";
 import { REWARDS_CANADA_EXTERNAL_PREFIX } from "../lib/import/rewards-canada";
@@ -34,11 +35,9 @@ function loadEnv() {
 
 async function main() {
   loadEnv();
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
+  const supabase = createClient(getSupabaseUrl(), getSupabaseSecretKey(), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   let updated = 0;
   let skipped = 0;

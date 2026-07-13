@@ -1,10 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseSecretKey, getSupabaseUrl } from "@/lib/supabase/env";
 
-/** Service-role client for admin operations. Never expose to the browser. */
+/** Service-role / secret-key client for admin operations. Never expose to the browser. */
 export function createAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
+  return createClient(getSupabaseUrl(), getSupabaseSecretKey(), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
