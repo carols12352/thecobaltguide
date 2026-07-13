@@ -1,15 +1,23 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PaginationBar } from "@/components/ui/pagination-bar";
 import { MapFiltersBar, type MapFilters } from "@/components/filters/map-filters";
 import { PlaceCard } from "@/components/places/place-card";
 import { sortPlacesByDistance } from "@/lib/map/distance";
+import {
+  getHomeListWidthPx,
+  isHomeSplitLayout,
+} from "@/lib/layout/home-split";
+import { useViewportWidth } from "@/lib/hooks/use-viewport-width";
 import { cn } from "@/lib/utils";
 import type { MapPlace } from "@/types/domain";
 import type { MapViewportMeta } from "@/components/map/merchant-map";
+
+const HOME_LIST_PAGE_SIZE = 10;
 
 const MerchantMap = dynamic(
   () =>
@@ -36,10 +44,30 @@ export default function HomePage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  const [listPage, setListPage] = useState(1);
   const [selectedPlace, setSelectedPlace] = useState<MapPlace | null>(null);
+  const viewportWidth = useViewportWidth();
+  const splitLayout = isHomeSplitLayout(viewportWidth);
+  const listWidthPx = getHomeListWidthPx(viewportWidth);
 
   const listPlaces = searchResults ?? viewportPlaces;
   const isSearchMode = searchResults !== null;
+
+  const paginatedPlaces = useMemo(() => {
+    const start = (listPage - 1) * HOME_LIST_PAGE_SIZE;
+    return listPlaces.slice(start, start + HOME_LIST_PAGE_SIZE);
+  }, [listPage, listPlaces]);
+
+  useEffect(() => {
+    setListPage(1);
+  }, [listPlaces, isSearchMode, searchQuery]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(listPlaces.length / HOME_LIST_PAGE_SIZE));
+    if (listPage > maxPage) {
+      setListPage(maxPage);
+    }
+  }, [listPage, listPlaces.length]);
 
   const handlePlacesLoaded = useCallback(
     (places: MapPlace[], meta: MapViewportMeta) => {
@@ -90,7 +118,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <section className="border-b border-zinc-200 bg-zinc-50 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -125,8 +153,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 lg:flex-row">
-        <div className="relative h-[50vh] lg:h-[calc(100vh-12rem)] lg:flex-1">
+      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 overflow-hidden p-4 lg:flex-row">
+        <div
+          className={cn(
+            "relative h-[50vh] min-w-0 lg:h-[calc(100vh-12rem)]",
+            splitLayout ? "flex-1" : "shrink-0",
+          )}
+        >
           <MerchantMap
             filters={filters}
             selectedPlace={selectedPlace}
@@ -147,32 +180,50 @@ export default function HomePage() {
         </div>
 
         <aside
+          style={splitLayout ? { width: listWidthPx } : undefined}
           className={cn(
-            "w-full space-y-2 overflow-y-auto lg:w-80 lg:shrink-0",
-            "max-h-[45vh] lg:max-h-[calc(100vh-12rem)]",
-            listOpen ? "block" : "hidden lg:block",
+            "flex min-h-0 flex-col gap-2 overflow-hidden",
+            splitLayout
+              ? "shrink-0 lg:h-[calc(100vh-12rem)]"
+              : "w-full max-h-[45vh]",
+            listOpen ? "flex" : "hidden lg:flex",
           )}
         >
-          <h2 className="text-sm font-semibold text-zinc-500">
+          <h2 className="shrink-0 text-sm font-semibold text-zinc-500">
             {isSearchMode
               ? `${listPlaces.length} search results`
               : `${listPlaces.length} places in view`}
           </h2>
-          {listPlaces.map((place) => (
-            <PlaceCard
-              key={place.id}
-              place={place}
-              selected={place.id === selectedPlace?.id}
-              onSelect={handlePlaceSelect}
+
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
+            {paginatedPlaces.map((place) => (
+              <PlaceCard
+                key={place.id}
+                place={place}
+                selected={place.id === selectedPlace?.id}
+                onSelect={handlePlaceSelect}
+              />
+            ))}
+            {listPlaces.length === 0 && (
+              <p className="text-sm text-zinc-500">
+                {isSearchMode
+                  ? "No merchants match your search."
+                  : "Move the map or adjust filters to see merchants."}
+              </p>
+            )}
+          </div>
+
+          {listPlaces.length > HOME_LIST_PAGE_SIZE ? (
+            <PaginationBar
+              compact
+              page={listPage}
+              total={listPlaces.length}
+              pageSize={HOME_LIST_PAGE_SIZE}
+              itemLabel="places"
+              onPageChange={setListPage}
+              className="shrink-0"
             />
-          ))}
-          {listPlaces.length === 0 && (
-            <p className="text-sm text-zinc-500">
-              {isSearchMode
-                ? "No merchants match your search."
-                : "Move the map or adjust filters to see merchants."}
-            </p>
-          )}
+          ) : null}
         </aside>
       </div>
     </div>

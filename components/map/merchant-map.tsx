@@ -8,6 +8,7 @@ import { DEFAULT_CENTER, getMapStyleUrl } from "@/lib/map/config";
 import { distanceMetres } from "@/lib/map/distance";
 import {
   animatePlacesIn,
+  easeToLocation,
   getFlyDurationMs,
 } from "@/lib/map/place-animation";
 import { registerPoiIconFallback } from "@/lib/map/poi-icon-fallback";
@@ -258,6 +259,7 @@ export function MerchantMap(props: MerchantMapProps) {
     try {
       const res = await fetch(`/api/places/map?${params}`, {
         signal: controller.signal,
+        cache: "no-store",
       });
       if (!res.ok) throw new Error("Failed to load places");
       const data = await res.json();
@@ -315,6 +317,11 @@ export function MerchantMap(props: MerchantMapProps) {
       void fetchPlacesRef.current(map, { animate: true, showLoading: true });
     });
 
+    map.on("error", (event) => {
+      console.error("MapLibre error:", event.error);
+      setError("Could not load map tiles");
+    });
+
     map.on("moveend", () => {
       if (skipMoveEndFetchRef.current) {
         skipMoveEndFetchRef.current = false;
@@ -370,7 +377,6 @@ export function MerchantMap(props: MerchantMapProps) {
       selectedPlace.latitude,
       selectedPlace.longitude,
     );
-    const targetZoom = Math.max(map.getZoom(), 15);
     const needsMove = distanceToPlace > 75 || map.getZoom() < 15;
 
     showPlacePopup(map, selectedPlace, popupRef);
@@ -378,17 +384,15 @@ export function MerchantMap(props: MerchantMapProps) {
     if (!needsMove) return;
 
     skipMoveEndFetchRef.current = true;
-    map.easeTo({
-      center: [selectedPlace.longitude, selectedPlace.latitude],
-      zoom: targetZoom,
-      duration: getFlyDurationMs(
-        { latitude: mapCenter.lat, longitude: mapCenter.lng },
-        {
-          latitude: selectedPlace.latitude,
-          longitude: selectedPlace.longitude,
-        },
-      ),
-    });
+    easeToLocation(
+      map,
+      { latitude: mapCenter.lat, longitude: mapCenter.lng },
+      {
+        latitude: selectedPlace.latitude,
+        longitude: selectedPlace.longitude,
+      },
+      { targetZoom: 15 },
+    );
   }, [selectedPlace]);
 
   return (
