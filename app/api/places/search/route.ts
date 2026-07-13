@@ -1,6 +1,7 @@
+import { CACHE_DURATIONS } from "@/config/constants";
 import {
   jsonError,
-  jsonOk,
+  jsonPublicCached,
   jsonValidationError,
 } from "@/lib/api/response";
 import { captureException } from "@/lib/monitoring/sentry";
@@ -23,7 +24,10 @@ export async function GET(request: Request) {
       parsed.data.limit,
     );
 
-    return jsonOk({ places });
+    return jsonPublicCached(
+      { places },
+      `public, max-age=0, s-maxage=${CACHE_DURATIONS.searchSeconds}, must-revalidate`,
+    );
   } catch (error) {
     captureException(error, { route: "GET /api/places/search" });
     return jsonError("Search failed", 500);

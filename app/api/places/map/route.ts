@@ -1,7 +1,7 @@
 import { CACHE_DURATIONS } from "@/config/constants";
 import {
   jsonError,
-  jsonOk,
+  jsonPublicCached,
   jsonValidationError,
 } from "@/lib/api/response";
 import { captureException } from "@/lib/monitoring/sentry";
@@ -21,11 +21,10 @@ export async function GET(request: Request) {
 
     const result = await placeService.getMapPlaces(parsed.data);
 
-    return jsonOk(result, {
-      headers: {
-        "Cache-Control": `public, s-maxage=${CACHE_DURATIONS.mapRegionSeconds}, stale-while-revalidate=60`,
-      },
-    });
+    return jsonPublicCached(
+      result,
+      `public, max-age=0, s-maxage=${CACHE_DURATIONS.mapRegionSeconds}, must-revalidate`,
+    );
   } catch (error) {
     captureException(error, { route: "GET /api/places/map" });
     return jsonError("Failed to load map places", 500);

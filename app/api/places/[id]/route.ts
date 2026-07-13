@@ -2,7 +2,7 @@ import { CACHE_DURATIONS } from "@/config/constants";
 import {
   jsonError,
   jsonNotFound,
-  jsonOk,
+  jsonPublicCached,
 } from "@/lib/api/response";
 import { captureException } from "@/lib/monitoring/sentry";
 import { placeService } from "@/server/services/place-service";
@@ -17,11 +17,10 @@ export async function GET(
 
     if (!place) return jsonNotFound("Place not found");
 
-    return jsonOk({ place }, {
-      headers: {
-        "Cache-Control": `public, s-maxage=${CACHE_DURATIONS.placeDetailsSeconds}, stale-while-revalidate=120`,
-      },
-    });
+    return jsonPublicCached(
+      { place },
+      `public, max-age=0, s-maxage=${CACHE_DURATIONS.placeDetailsSeconds}, must-revalidate`,
+    );
   } catch (error) {
     captureException(error, { route: "GET /api/places/:id" });
     return jsonError("Failed to load place", 500);
