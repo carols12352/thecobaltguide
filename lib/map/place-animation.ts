@@ -2,37 +2,19 @@ import maplibregl from "maplibre-gl";
 import { getTransitionDurationMs, distanceMetres } from "@/lib/map/distance";
 import type { MapPlace } from "@/types/domain";
 
-export const FAR_PULLBACK_DISTANCE_METRES = 500;
-
 export type MapCoord = {
   latitude: number;
   longitude: number;
 };
 
-export function shouldUsePullbackMove(
+/** Within this distance, flyTo will not zoom out below the current level. */
+export const LOCAL_MOVE_NO_ZOOM_OUT_METRES = 5_000;
+
+export function shouldAvoidZoomOut(
   distanceMetresValue: number,
-  threshold = FAR_PULLBACK_DISTANCE_METRES,
+  threshold = LOCAL_MOVE_NO_ZOOM_OUT_METRES,
 ): boolean {
-  return distanceMetresValue > threshold;
-}
-
-export function getMapMovePhaseDurations(distanceMetresValue: number): {
-  totalMs: number;
-  pullbackMs: number;
-  zoomInMs: number;
-} {
-  const totalMs = getTransitionDurationMs(distanceMetresValue);
-
-  if (!shouldUsePullbackMove(distanceMetresValue)) {
-    return { totalMs, pullbackMs: 0, zoomInMs: totalMs };
-  }
-
-  const pullbackMs = Math.round(totalMs * 0.45);
-  return {
-    totalMs,
-    pullbackMs,
-    zoomInMs: totalMs - pullbackMs,
-  };
+  return distanceMetresValue <= threshold;
 }
 
 export function easeToLocation(
@@ -41,7 +23,7 @@ export function easeToLocation(
   to: MapCoord,
   options: {
     targetZoom: number;
-    farDistanceMetres?: number;
+    localMoveMetres?: number;
   },
 ): void {
   const dist = distanceMetres(
@@ -50,39 +32,19 @@ export function easeToLocation(
     to.latitude,
     to.longitude,
   );
-  const targetZoom = Math.max(map.getZoom(), options.targetZoom);
-  const { pullbackMs, zoomInMs } = getMapMovePhaseDurations(dist);
+  const currentZoom = map.getZoom();
+  const targetZoom = Math.max(currentZoom, options.targetZoom);
+  const duration = getTransitionDurationMs(dist);
 
   map.stop();
 
-  if (!shouldUsePullbackMove(dist, options.farDistanceMetres)) {
-    map.easeTo({
-      center: [to.longitude, to.latitude],
-      zoom: targetZoom,
-      duration: zoomInMs,
-    });
-    return;
-  }
-
-  map.fitBounds(
-    [
-      [from.longitude, from.latitude],
-      [to.longitude, to.latitude],
-    ],
-    {
-      padding: 80,
-      duration: pullbackMs,
-      maxZoom: Math.min(map.getZoom(), 12),
-    },
-  );
-
-  map.once("moveend", function finishEaseToLocation() {
-    map.off("moveend", finishEaseToLocation);
-    map.easeTo({
-      center: [to.longitude, to.latitude],
-      zoom: targetZoom,
-      duration: zoomInMs,
-    });
+  map.flyTo({
+    center: [to.longitude, to.latitude],
+    zoom: targetZoom,
+    duration,
+    ...(shouldAvoidZoomOut(dist, options.localMoveMetres)
+      ? { minZoom: Math.min(currentZoom, targetZoom) - 0.25 }
+      : {}),
   });
 }
 

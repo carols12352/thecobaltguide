@@ -13,8 +13,9 @@ import {
   isHomeSplitLayout,
 } from "@/lib/layout/home-split";
 import { useViewportWidth } from "@/lib/hooks/use-viewport-width";
+import { MAP_DEFAULTS } from "@/config/constants";
 import { cn } from "@/lib/utils";
-import type { MapPlace } from "@/types/domain";
+import type { MapCitySummary, MapPlace } from "@/types/domain";
 import type { MapViewportMeta } from "@/components/map/merchant-map";
 
 const HOME_LIST_PAGE_SIZE = 10;
@@ -45,6 +46,11 @@ export default function HomePage() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [listPage, setListPage] = useState(1);
+  const [mapInViewEnabled, setMapInViewEnabled] = useState(true);
+  const [outOfArea, setOutOfArea] = useState(false);
+  const [citySummary, setCitySummary] = useState<MapCitySummary | null>(null);
+  const [listTruncated, setListTruncated] = useState(false);
+  const [viewportCount, setViewportCount] = useState<number | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<MapPlace | null>(null);
   const viewportWidth = useViewportWidth();
   const splitLayout = isHomeSplitLayout(viewportWidth);
@@ -65,11 +71,38 @@ export default function HomePage() {
 
   const handlePlacesLoaded = useCallback(
     (places: MapPlace[], meta: MapViewportMeta) => {
+      setMapInViewEnabled(meta.inViewListEnabled);
+      setOutOfArea(meta.outOfArea ?? false);
+      setCitySummary(meta.citySummary ?? null);
+      setListTruncated(meta.truncated ?? false);
+      setViewportCount(meta.viewportCount ?? null);
       setViewportPlaces(sortPlacesByDistance(places, meta.center));
-      setListPage(1);
+      if (meta.resetListPage !== false) {
+        setListPage(1);
+      }
     },
     [],
   );
+
+  function formatCityListLabel(summary: MapCitySummary): string {
+    return summary.city
+      ? `${summary.count.toLocaleString()} in ${summary.city}`
+      : `${summary.count.toLocaleString()} merchants in view`;
+  }
+
+  function formatInViewListLabel(
+    visibleCount: number,
+    truncated: boolean,
+    totalCount: number | null,
+  ): string {
+    if (truncated && totalCount != null && totalCount > visibleCount) {
+      return `${totalCount.toLocaleString()} places in view`;
+    }
+    if (truncated) {
+      return `${MAP_DEFAULTS.maxResults}+ places in view`;
+    }
+    return `${visibleCount.toLocaleString()} places in view`;
+  }
 
   function handlePlaceSelect(place: MapPlace) {
     setSelectedPlace(place);
@@ -122,7 +155,7 @@ export default function HomePage() {
           <div>
             <h1 className="text-xl font-bold">Find 5x Merchants Near You</h1>
             <p className="text-sm text-zinc-600">
-              Community-sourced Amex Cobalt multiplier data for the GTA.
+              Community-sourced Amex Cobalt multiplier data across Canada.
             </p>
           </div>
           <form onSubmit={handleSearch} className="flex gap-2">
@@ -173,14 +206,24 @@ export default function HomePage() {
           >
             {listOpen
               ? "Hide list"
-              : `${listPlaces.length} places in view`}
+              : isSearchMode || mapInViewEnabled
+                ? formatInViewListLabel(
+                    listPlaces.length,
+                    listTruncated,
+                    viewportCount,
+                  )
+                : outOfArea
+                  ? "Outside Canada"
+                  : citySummary
+                    ? formatCityListLabel(citySummary)
+                    : "Zoom in to see places"}
           </Button>
         </div>
 
         <aside
           style={splitLayout ? { width: listWidthPx } : undefined}
           className={cn(
-            "flex min-h-0 flex-col gap-2 overflow-hidden",
+            "flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden",
             splitLayout
               ? "shrink-0 lg:h-[calc(100vh-12rem)]"
               : "w-full max-h-[45vh]",
@@ -190,7 +233,17 @@ export default function HomePage() {
           <h2 className="shrink-0 text-sm font-semibold text-zinc-500">
             {isSearchMode
               ? `${listPlaces.length} search results`
-              : `${listPlaces.length} places in view`}
+              : mapInViewEnabled
+                ? formatInViewListLabel(
+                    listPlaces.length,
+                    listTruncated,
+                    viewportCount,
+                  )
+                : outOfArea
+                  ? "Outside Canada"
+                  : citySummary
+                    ? formatCityListLabel(citySummary)
+                    : "Zoom in to browse merchants"}
           </h2>
 
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
@@ -202,7 +255,30 @@ export default function HomePage() {
                 onSelect={handlePlaceSelect}
               />
             ))}
-            {listPlaces.length === 0 && (
+            {!isSearchMode && mapInViewEnabled && listTruncated ? (
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                {viewportCount != null && viewportCount > listPlaces.length
+                  ? `${viewportCount.toLocaleString()} merchants in this view. Showing ${listPlaces.length}. Zoom in for full results.`
+                  : "Showing a limited set of merchants in this area. Zoom in for full results."}
+              </p>
+            ) : null}
+            {!isSearchMode && outOfArea ? (
+              <p className="text-sm text-zinc-500">
+                Merchant data covers Canada. Pan the map back to see merchants.
+              </p>
+            ) : null}
+            {!isSearchMode && !mapInViewEnabled && !outOfArea && citySummary ? (
+              <p className="text-sm text-zinc-500">
+                {citySummary.count.toLocaleString()} merchants in this view.
+                Zoom in to browse the list.
+              </p>
+            ) : null}
+            {!isSearchMode && !mapInViewEnabled && !outOfArea && !citySummary ? (
+              <p className="text-sm text-zinc-500">
+                Zoom in on the map to browse merchants in this area.
+              </p>
+            ) : null}
+            {listPlaces.length === 0 && (isSearchMode || mapInViewEnabled) && (
               <p className="text-sm text-zinc-500">
                 {isSearchMode
                   ? "No merchants match your search."
@@ -211,15 +287,16 @@ export default function HomePage() {
             )}
           </div>
 
-          {listPlaces.length > HOME_LIST_PAGE_SIZE ? (
+          {mapInViewEnabled && listPlaces.length > HOME_LIST_PAGE_SIZE ? (
             <PaginationBar
               compact
+              availableWidth={listWidthPx}
               page={currentListPage}
               total={listPlaces.length}
               pageSize={HOME_LIST_PAGE_SIZE}
               itemLabel="places"
               onPageChange={setListPage}
-              className="shrink-0"
+              className="shrink-0 min-w-0"
             />
           ) : null}
         </aside>
