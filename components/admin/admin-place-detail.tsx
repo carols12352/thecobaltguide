@@ -19,16 +19,20 @@ import {
   formatPlaceAddress,
 } from "@/lib/utils";
 import { formatCanadianPostalCodeInput } from "@/lib/validation/canadian-postal-code";
+import type { GeocodeMatchTier } from "@/lib/geocoding/address-query";
 import {
   fetchGeocodeLookup,
   fetchReverseGeocode,
+  enrichGeocodeResultWithReverse,
   geocodeParamsFromForm,
   geocodeSuccessMessage,
-  mergeGeocodeIntoAddressFields,
+  mergeGeocodeLookupIntoAddressFields,
   mergeReverseGeocodeIntoAddressFields,
   resolveGeocodeAddressLine1,
+  formatGeocodeResultLabel,
 } from "@/lib/geocoding/client";
 import { geocodeQuerySchema } from "@/server/validation/schemas";
+import type { z } from "zod";
 import type {
   AdminPlaceDetail,
   AdminPlaceFlag,
@@ -36,6 +40,8 @@ import type {
   GeocodingResult,
   MultiplierValue,
 } from "@/types/domain";
+
+type GeocodeLookupInput = z.infer<typeof geocodeQuerySchema>;
 
 const LocationPicker = dynamic(
   () =>
@@ -46,13 +52,14 @@ const LocationPicker = dynamic(
   },
 );
 
-function RequiredMark() {
-  return (
-    <span className="text-red-600" aria-hidden="true">
-      *
-    </span>
-  );
-}
+const GEOCODE_LOOKUP_HINT =
+  "Look up by postal code, street address, or merchant name + city — priority in that order. At least one is required. Multiple matches are shown for you to pick from; the best match is applied automatically. Empty or incorrect fields are filled from the result; correctly entered values are kept. Drag the pin to fine-tune.";
+
+const GEOCODE_MATCH_TIER_LABELS: Record<GeocodeMatchTier, string> = {
+  postal: "Postal",
+  address: "Address",
+  name: "Name + city",
+};
 
 const FLAG_REASON_LABELS: Record<string, string> = {
   duplicate: "Duplicate",
@@ -102,12 +109,14 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
   const [saving, setSaving] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [addressForm, setAddressForm] = useState<AddressForm | null>(null);
+  const [geocodeName, setGeocodeName] = useState("");
   const [geocodeResults, setGeocodeResults] = useState<GeocodingResult[]>([]);
   const [geocodeLoading, setGeocodeLoading] = useState(false);
   const [pinGeocodeLoading, setPinGeocodeLoading] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [geocodeNotice, setGeocodeNotice] = useState<string | null>(null);
   const pinGeocodeRequestRef = useRef(0);
+  const lastLookupInputRef = useRef<GeocodeLookupInput | null>(null);
   const [resolvePromptOpen, setResolvePromptOpen] = useState(false);
   const [resolvePromptCount, setResolvePromptCount] = useState(0);
   const [resolvingFlags, setResolvingFlags] = useState(false);
@@ -131,6 +140,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     const loaded = data.place as AdminPlaceDetail;
     setPlace(loaded);
     setAddressForm(toAddressForm(loaded));
+    setGeocodeName(loaded.name);
     setGeocodeResults([]);
     setGeocodeError(null);
     setGeocodeNotice(null);
@@ -157,7 +167,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     setGeocodeResults([]);
 
     const lookupInput = geocodeParamsFromForm({
-      name: place.name,
+      name: geocodeName,
       addressLine1: addressForm.addressLine1,
       city: addressForm.city,
       province: addressForm.province,
@@ -166,8 +176,13 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     const parsed = geocodeQuerySchema.safeParse(lookupInput);
 
     if (!parsed.success) {
-      const postalError = parsed.error.flatten().fieldErrors.postalCode?.[0];
-      setGeocodeError(postalError ?? "Enter a valid postal code.");
+      const fieldErrors = parsed.error.flatten().fieldErrors;
+      setGeocodeError(
+        fieldErrors.postalCode?.[0] ??
+          fieldErrors.name?.[0] ??
+          fieldErrors.addressLine1?.[0] ??
+          "Enter a merchant name, postal code, or address to look up the location.",
+      );
       return;
     }
 
@@ -175,16 +190,20 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     try {
       const { results, source } = await fetchGeocodeLookup(parsed.data);
       if (results.length === 0) {
-        setGeocodeError("No matching location found. Check the postal code and try again.");
+        setGeocodeError(
+          "No matching location found. Check the name, postal code, or address and try again.",
+        );
         return;
       }
 
       setGeocodeResults(results.length > 1 ? results : []);
-      mergeGeocodeResult(results[0]!);
+      lastLookupInputRef.current = parsed.data;
+      const enriched = await enrichGeocodeResultWithReverse(results[0]!);
+      mergeGeocodeResult(enriched, parsed.data);
       setGeocodeNotice(
         results.length > 1
           ? `${results.length} street matches found — pick the correct one if needed.`
-          : geocodeSuccessMessage(source, results[0]!),
+          : geocodeSuccessMessage(source, enriched),
       );
     } catch {
       setGeocodeError("Could not look up that address.");
@@ -193,9 +212,14 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     }
   }
 
-  function mergeGeocodeResult(result: GeocodingResult) {
+  function mergeGeocodeResult(
+    result: GeocodingResult,
+    lookup: GeocodeLookupInput = lastLookupInputRef.current ?? {},
+  ) {
     setAddressForm((current) =>
-      current ? mergeGeocodeIntoAddressFields(current, result) : current,
+      current
+        ? mergeGeocodeLookupIntoAddressFields(current, result, lookup)
+        : current,
     );
     setGeocodeError(null);
   }
@@ -408,7 +432,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
             >
               ← Admin dashboard
             </Link>
-            <h1 className="mt-2 text-2xl font-bold">{place.name}</h1>
+            <h1 className="mt-4 text-2xl font-bold">{place.name}</h1>
             <p className="mt-1 text-zinc-600 dark:text-zinc-400">
               {formatPlaceAddress(place)}
             </p>
@@ -453,13 +477,21 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
             <CardHeader>
               <h2 className="font-semibold">Address & location</h2>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Only postal code is required for lookup. Street address, city,
-                and province fill in from the result; the merchant name helps
-                match the correct business. Drag the pin to fine-tune.
+                {GEOCODE_LOOKUP_HINT}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <form onSubmit={(e) => void lookupAddress(e)} className="grid gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="geocode-name">Merchant name</Label>
+                  <Input
+                    id="geocode-name"
+                    value={geocodeName}
+                    onChange={(e) => setGeocodeName(e.target.value)}
+                    placeholder="Business name for geocoding"
+                    spellCheck={false}
+                  />
+                </div>
                 <div className="space-y-1">
                   <Label htmlFor="address-line1">Address line 1</Label>
                   <Input
@@ -499,9 +531,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="address-postal">
-                    Postal code <RequiredMark />
-                  </Label>
+                  <Label htmlFor="address-postal">Postal code</Label>
                   <Input
                     id="address-postal"
                     value={addressForm.postalCode}
@@ -511,7 +541,6 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
                         postalCode: formatCanadianPostalCodeInput(e.target.value),
                       })
                     }
-                    required
                     maxLength={7}
                   />
                 </div>
@@ -541,11 +570,12 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
                         className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:border-cobalt-500 dark:border-zinc-700"
                         onClick={() => pickGeocodeResult(result)}
                       >
-                        {resolveGeocodeAddressLine1(result) ||
-                          `${result.latitude.toFixed(5)}, ${result.longitude.toFixed(5)}`}
-                        {result.city ? `, ${result.city}` : ""}
-                        {result.province ? `, ${result.province}` : ""}{" "}
-                        {result.postalCode}
+                        {result.matchTier ? (
+                          <span className="mb-0.5 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                            {GEOCODE_MATCH_TIER_LABELS[result.matchTier]}
+                          </span>
+                        ) : null}
+                        {formatGeocodeResultLabel(result)}
                       </button>
                     ))}
                   </div>

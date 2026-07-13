@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_CARD_SLUG, DUPLICATE_DETECTION, MAP_DEFAULTS } from "@/config/constants";
 import { parseGeoLocation } from "@/lib/map/parse-location";
 import { normalizeMerchantName, nameSimilarity } from "@/lib/utils";
+import { normalizeCanadianPostalCode } from "@/lib/validation/canadian-postal-code";
 import { confidenceScoreForAdminLevel } from "@/server/services/aggregation";
 import type { CreatePlaceInput } from "@/server/validation/schemas";
 import type { AdminPlaceDetail, ConfidenceLevel, MapPlace, MultiplierValue, PlaceDetail, PlaceSummary } from "@/types/domain";
@@ -677,7 +678,10 @@ export class PlaceRepository {
   }
 
   async searchForAdmin(options: {
-    query?: string;
+    placeId?: string;
+    name?: string;
+    postalCode?: string;
+    addressLine1?: string;
     status?: string;
     page?: number;
     pageSize?: number;
@@ -700,18 +704,20 @@ export class PlaceRepository {
       query = query.eq("status", options.status);
     }
 
-    const trimmedQuery = options.query?.trim();
-    if (trimmedQuery) {
-      const uuidPattern =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidPattern.test(trimmedQuery)) {
-        query = query.eq("id", trimmedQuery);
-      } else {
-        const escaped = trimmedQuery.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-        const pattern = `%${escaped}%`;
-        query = query.or(
-          `name.ilike.${pattern},address_line1.ilike.${pattern},city.ilike.${pattern},postal_code.ilike.${pattern}`,
+    if (options.placeId) {
+      query = query.eq("id", options.placeId);
+    } else {
+      if (options.name) {
+        query = query.ilike("name", ilikePattern(options.name));
+      }
+      if (options.postalCode) {
+        query = query.ilike(
+          "postal_code",
+          ilikePattern(normalizeCanadianPostalCode(options.postalCode)),
         );
+      }
+      if (options.addressLine1) {
+        query = query.ilike("address_line1", ilikePattern(options.addressLine1));
       }
     }
 
@@ -727,6 +733,14 @@ export class PlaceRepository {
       pageSize,
     };
   }
+}
+
+function ilikePattern(value: string): string {
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/%/g, "\\%")
+    .replace(/_/g, "\\_");
+  return `%${escaped}%`;
 }
 
 function profileUsername(

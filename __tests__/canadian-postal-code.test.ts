@@ -85,13 +85,33 @@ describe("geocodeQuerySchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("rejects lookup without postal code", () => {
+  it("rejects lookup without name, postal code, or address", () => {
     const parsed = geocodeQuerySchema.safeParse({
       city: "Waterloo",
       province: "ON",
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it("allows merchant-name-only lookup", () => {
+    const parsed = geocodeQuerySchema.safeParse({
+      name: "Walmart Supercenter",
+      city: "Waterloo",
+      province: "ON",
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("allows address-only lookup without postal code", () => {
+    const parsed = geocodeQuerySchema.safeParse({
+      addressLine1: "70 Bridgeport Rd E",
+      city: "Waterloo",
+      province: "ON",
+    });
+
+    expect(parsed.success).toBe(true);
   });
 
   it("rejects invalid postal codes", () => {
