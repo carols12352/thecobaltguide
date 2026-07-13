@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { getCategoryLabel } from "@/config/categories";
 import { formatConfidence, formatDate, formatMultiplier, formatPlaceAddress } from "@/lib/utils";
-import type { PlaceDetail } from "@/types/domain";
+import { formatPlaceReportGroupLabel } from "@/lib/reports/place-report-groups";
+import type { PlaceDetail, PlaceReportGroup } from "@/types/domain";
 
 const PAYMENT_CONTEXTS = [
   { value: "in_store", label: "In-store" },
@@ -94,9 +95,77 @@ export function PlaceDetails({ place }: { place: PlaceDetail }) {
         </CardContent>
       </Card>
 
+      <RecentReports placeId={place.id} />
       <ReportForm placeId={place.id} />
       <FlagForm placeId={place.id} />
     </div>
+  );
+}
+
+const PAYMENT_CONTEXT_LABELS = Object.fromEntries(
+  PAYMENT_CONTEXTS.map((c) => [c.value, c.label]),
+) as Record<(typeof PAYMENT_CONTEXTS)[number]["value"], string>;
+
+function RecentReports({ placeId }: { placeId: string }) {
+  const [groups, setGroups] = useState<PlaceReportGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(`/api/places/${placeId}/reports`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { groups?: PlaceReportGroup[] };
+        if (!cancelled) setGroups(data.groups ?? []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [placeId]);
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold">Recent Reports</h2>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-zinc-500">Loading…</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (groups.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="font-semibold">Recent Reports</h2>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2 text-sm">
+          {groups.map((group) => (
+            <li
+              key={`${group.multiplier}-${group.paymentContext}`}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800"
+            >
+              <span>{formatPlaceReportGroupLabel(group, PAYMENT_CONTEXT_LABELS)}</span>
+              <span className="text-zinc-500">
+                {formatDate(group.latestTransactionDate)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -135,6 +204,20 @@ function ReportForm({ placeId }: { placeId: string }) {
     } else if (res.status === 401) {
       setStatus("error");
       setMessage("Please sign in to submit a report.");
+    } else if (res.status === 429) {
+      const data = await res.json();
+      const resetAt =
+        typeof data.resetAt === "number" ? new Date(data.resetAt) : null;
+      const waitLabel =
+        resetAt && !Number.isNaN(resetAt.getTime())
+          ? resetAt.toLocaleTimeString()
+          : "a moment";
+      setStatus("error");
+      setMessage(
+        data.error
+          ? `${data.error} Try again after ${waitLabel}.`
+          : `Please wait before submitting another report. Try again after ${waitLabel}.`,
+      );
     } else {
       const data = await res.json();
       setStatus("error");
