@@ -4,17 +4,10 @@ import { normalizeMerchantName } from "@/lib/utils";
 const MAP_VERSION_KEY = "cobalt:cache:map-version";
 const SEARCH_VERSION_KEY = "cobalt:cache:search-version";
 
-function roundCoord(value: number): string {
-  return value.toFixed(3);
-}
-
 export function mapCacheKey(
   version: number,
   params: {
-    north: number;
-    south: number;
-    east: number;
-    west: number;
+    gridKey: string;
     zoom?: number;
     multiplier?: number;
     category?: string;
@@ -24,10 +17,8 @@ export function mapCacheKey(
   const parts = [
     "cobalt:cache:map:v1",
     version,
-    roundCoord(params.north),
-    roundCoord(params.south),
-    roundCoord(params.east),
-    roundCoord(params.west),
+    "grid",
+    params.gridKey,
     params.zoom ?? "all",
     params.multiplier ?? "all",
     params.category ?? "all",
@@ -46,6 +37,79 @@ export function searchCacheKey(
   limit: number,
 ): string {
   return `cobalt:cache:search:v1:${version}:${normalizeMerchantName(query)}:${limit}`;
+}
+
+export function cityCountCacheKey(
+  version: number,
+  params: {
+    city: string;
+    province: string;
+    multiplier?: number;
+    category?: string;
+    card?: string;
+  },
+): string {
+  const city = params.city.trim().toLowerCase();
+  const province = params.province.trim().toUpperCase();
+  return [
+    "cobalt:cache:city-count:v1",
+    version,
+    province,
+    city,
+    params.multiplier ?? "all",
+    params.category ?? "all",
+    params.card ?? DEFAULT_CARD_SLUG,
+  ].join(":");
+}
+
+export function cityMapCacheKey(
+  version: number,
+  params: {
+    city: string;
+    province: string;
+    multiplier?: number;
+    category?: string;
+    card?: string;
+  },
+): string {
+  const city = params.city.trim().toLowerCase();
+  const province = params.province.trim().toUpperCase();
+  return [
+    "cobalt:cache:city-map:v1",
+    version,
+    province,
+    city,
+    params.multiplier ?? "all",
+    params.category ?? "all",
+    params.card ?? DEFAULT_CARD_SLUG,
+  ].join(":");
+}
+
+export function cityResolveCacheKey(version: number, gridKey: string): string {
+  return ["cobalt:cache:city-resolve:v1", version, gridKey].join(":");
+}
+
+export function viewportDetailsCacheKey(
+  version: number,
+  params: {
+    viewGridKey: string;
+    zoom?: number;
+    gridTruncated?: boolean;
+    multiplier?: number;
+    category?: string;
+    card?: string;
+  },
+): string {
+  return [
+    "cobalt:cache:viewport-details:v1",
+    version,
+    params.viewGridKey,
+    params.zoom ?? "all",
+    params.gridTruncated ? "trunc" : "full",
+    params.multiplier ?? "all",
+    params.category ?? "all",
+    params.card ?? DEFAULT_CARD_SLUG,
+  ].join(":");
 }
 
 const ADMIN_VERSION_KEY = "cobalt:cache:admin-version";

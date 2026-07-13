@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isRewardsCanadaImported } from "@/lib/import/rewards-canada";
+import { getSummaryCutoffDate } from "@/lib/summary/cutoff-date";
 import { calculateAggregation } from "@/server/services/aggregation";
 import type { AggregationInput } from "@/types/domain";
 
@@ -9,6 +10,7 @@ export class SummaryService {
     cardProductId: string,
   ): Promise<void> {
     const supabase = createAdminClient();
+    const cutoffDate = getSummaryCutoffDate();
 
     const [{ data: place }, { data: reports, error }] = await Promise.all([
       supabase.from("places").select("external_place_id").eq("id", placeId).single(),
@@ -16,7 +18,9 @@ export class SummaryService {
         .from("multiplier_reports")
         .select("multiplier, transaction_date, user_id, status")
         .eq("place_id", placeId)
-        .eq("card_product_id", cardProductId),
+        .eq("card_product_id", cardProductId)
+        .eq("status", "active")
+        .gte("transaction_date", cutoffDate),
     ]);
 
     if (error) throw error;

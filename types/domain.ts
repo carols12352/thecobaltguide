@@ -25,6 +25,12 @@ export type ConfidenceLevel =
   | "recently_confirmed";
 export type MultiplierValue = 1 | 2 | 3 | 5;
 
+export interface MapCitySummary {
+  count: number;
+  city?: string;
+  province?: string;
+}
+
 export interface MapPlace {
   id: string;
   name: string;
@@ -44,6 +50,9 @@ export interface MapPlace {
 export interface MapPlacesResponse {
   places: MapPlace[];
   truncated: boolean;
+  citySummary?: MapCitySummary | null;
+  viewportCount?: number | null;
+  listPlaces?: MapPlace[] | null;
 }
 
 export interface PlaceDetail {
@@ -87,6 +96,18 @@ export interface AdminPlaceDetail extends PlaceDetail {
   updatedAt: string;
   cardProductId: string;
   openFlagCount: number;
+  flags: AdminPlaceFlag[];
+}
+
+export interface AdminPlaceFlag {
+  id: string;
+  reason: string;
+  details: string | null;
+  status: FlagStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+  reporterUsername: string | null;
+  reviewedByUsername: string | null;
 }
 
 export interface MultiplierReport {

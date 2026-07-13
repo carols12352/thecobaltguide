@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { CDN_CACHE_DURATIONS } from "@/config/constants";
 
 export function jsonOk<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, { status: 200, ...init });
@@ -20,6 +21,13 @@ export function jsonAdmin<T>(data: T, init?: ResponseInit) {
         : init?.headers),
     },
   });
+}
+
+export function publicCdnCacheControl(
+  sMaxAge: number,
+  staleWhileRevalidate = CDN_CACHE_DURATIONS.staleWhileRevalidateSeconds,
+) {
+  return `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=${staleWhileRevalidate}, must-revalidate`;
 }
 
 /** JSON for public map/search data — always revalidate, short CDN TTL. */

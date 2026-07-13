@@ -19,13 +19,16 @@ export class ReportRepository {
     return (data ?? []).map(this.mapReport);
   }
 
-  async findByUserId(userId: string): Promise<MultiplierReport[]> {
+  async findByUserId(userId: string, limit = 50): Promise<MultiplierReport[]> {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("multiplier_reports")
-      .select("*")
+      .select(
+        "id, place_id, user_id, card_product_id, multiplier, transaction_date, payment_context, notes, status, report_kind, reviewed_at, created_at, updated_at",
+      )
       .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(limit);
 
     if (error) throw error;
     return (data ?? []).map(this.mapReport);
@@ -33,14 +36,15 @@ export class ReportRepository {
 
   async countActiveByPlace(placeId: string) {
     const supabase = createAdminClient();
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from("multiplier_reports")
-      .select("id", { count: "exact", head: true })
+      .select("id")
       .eq("place_id", placeId)
-      .eq("status", "active");
+      .eq("status", "active")
+      .limit(1);
 
     if (error) throw error;
-    return count ?? 0;
+    return data?.length ?? 0;
   }
 
   async create(

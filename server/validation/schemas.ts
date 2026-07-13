@@ -20,7 +20,33 @@ export const viewportQuerySchema = z.object({
   south: z.coerce.number().min(-90).max(90),
   east: z.coerce.number().min(-180).max(180),
   west: z.coerce.number().min(-180).max(180),
-  zoom: z.coerce.number().min(1).max(22).optional(),
+  zoom: z.coerce.number().min(0).max(22).optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  viewNorth: z.coerce.number().min(-90).max(90).optional(),
+  viewSouth: z.coerce.number().min(-90).max(90).optional(),
+  viewEast: z.coerce.number().min(-180).max(180).optional(),
+  viewWest: z.coerce.number().min(-180).max(180).optional(),
+  multiplier: z.coerce
+    .number()
+    .refine((v) => MULTIPLIER_OPTIONS.includes(v as 1 | 2 | 3 | 5))
+    .optional(),
+  category: z.enum(CATEGORY_VALUES as [string, ...string[]]).optional(),
+  card: z.string().optional(),
+});
+
+export const viewportDetailsQuerySchema = z.object({
+  viewNorth: z.coerce.number().min(-90).max(90),
+  viewSouth: z.coerce.number().min(-90).max(90),
+  viewEast: z.coerce.number().min(-180).max(180),
+  viewWest: z.coerce.number().min(-180).max(180),
+  zoom: z.coerce.number().min(0).max(22).optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  gridTruncated: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
   multiplier: z.coerce
     .number()
     .refine((v) => MULTIPLIER_OPTIONS.includes(v as 1 | 2 | 3 | 5))
@@ -36,12 +62,34 @@ export const searchQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(50).default(20),
 });
 
-export const geocodeQuerySchema = z.object({
-  name: z.string().trim().max(200).optional(),
-  addressLine1: z.string().trim().min(1).max(300),
-  city: z.string().trim().min(1).max(100),
-  province: z.string().trim().min(1).max(100),
-  postalCode: canadianPostalCodeSchema,
+export const geocodeQuerySchema = z
+  .object({
+    name: z.string().trim().max(200).optional(),
+    addressLine1: z.string().trim().max(300).optional(),
+    city: z.string().trim().max(100).optional(),
+    province: z.string().trim().max(100).optional(),
+    postalCode: z.string().trim().min(1).max(20),
+  })
+  .superRefine((data, ctx) => {
+    if (!isValidCanadianPostalCode(data.postalCode)) {
+      ctx.addIssue({
+        code: "custom",
+        message: CANADIAN_POSTAL_CODE_MESSAGE,
+        path: ["postalCode"],
+      });
+    }
+  })
+  .transform((data) => ({
+    name: data.name?.trim() || undefined,
+    addressLine1: data.addressLine1?.trim() || undefined,
+    city: data.city?.trim() || undefined,
+    province: data.province?.trim() || undefined,
+    postalCode: normalizeCanadianPostalCode(data.postalCode),
+  }));
+
+export const reverseGeocodeQuerySchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
 });
 
 export const createPlaceSchema = z.object({
@@ -109,7 +157,6 @@ export const adminPlaceSummaryPatchSchema = z.object({
   confidenceLevel: z
     .enum([...CONFIDENCE_LEVELS] as [string, ...string[]])
     .optional(),
-  confidenceScore: z.coerce.number().min(0).max(1).optional(),
   currentMultiplier: z.coerce
     .number()
     .refine((v) => MULTIPLIER_OPTIONS.includes(v as 1 | 2 | 3 | 5))
@@ -122,10 +169,16 @@ export const adminPlacePatchSchema = z.object({
   city: z.string().min(1).max(100).optional(),
   province: z.string().min(1).max(100).optional(),
   postalCode: z.string().min(1).max(20).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
   category: z.enum(CATEGORY_VALUES as [string, ...string[]]).optional(),
   acceptsAmex: z.boolean().optional(),
   status: z.enum(["active", "permanently_closed", "merged"]).optional(),
   summary: adminPlaceSummaryPatchSchema.optional(),
+});
+
+export const adminPlaceFlagsPatchSchema = z.object({
+  status: z.enum(["resolved", "dismissed"]),
 });
 
 export const adminPlaceMergeSchema = z.object({

@@ -5,36 +5,46 @@ import {
   mapCacheKey,
   placeCacheKey,
 } from "@/lib/cache/keys";
+import { alignViewportToGrid } from "@/lib/map/viewport-grid";
 
 describe("cache keys", () => {
-  it("builds stable map cache keys for rounded viewport bounds", () => {
-    const params = {
+  it("builds stable map cache keys for grid-aligned viewports", () => {
+    const alignedA = alignViewportToGrid({
       north: 43.673100131,
       south: 43.633293272,
       east: -79.344061206,
       west: -79.422338793,
       zoom: 13,
-      multiplier: 5,
-      category: "restaurant",
-    };
-
-    const keyA = mapCacheKey(1, params);
-    const keyB = mapCacheKey(1, {
-      ...params,
+    });
+    const alignedB = alignViewportToGrid({
       north: 43.6731004,
       south: 43.6332933,
+      east: -79.344061,
+      west: -79.422339,
+      zoom: 13,
+    });
+
+    const keyA = mapCacheKey(1, {
+      gridKey: alignedA.gridKey,
+      zoom: 13,
+      multiplier: 5,
+      category: "restaurant",
+    });
+    const keyB = mapCacheKey(1, {
+      gridKey: alignedB.gridKey,
+      zoom: 13,
+      multiplier: 5,
+      category: "restaurant",
     });
 
     expect(keyA).toBe(keyB);
-    expect(keyA).toContain("cobalt:cache:map:v1:1:");
+    expect(keyA).toContain("cobalt:cache:map:v1:1:grid:");
   });
 
   it("changes map cache keys when version bumps", () => {
     const params = {
-      north: 43.67,
-      south: 43.63,
-      east: -79.34,
-      west: -79.42,
+      gridKey: "13:872-876:-1589--1584",
+      zoom: 13,
     };
 
     expect(mapCacheKey(1, params)).not.toBe(mapCacheKey(2, params));

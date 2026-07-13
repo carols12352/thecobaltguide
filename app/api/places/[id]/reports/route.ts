@@ -38,10 +38,10 @@ export async function POST(
     const { id: placeId } = await params;
     const ip = getClientIp(request);
 
-    const ipLimit = checkIpWriteRateLimit(ip);
+    const ipLimit = await checkIpWriteRateLimit(ip);
     if (!ipLimit.allowed) return jsonRateLimited(ipLimit.resetAt);
 
-    const reportLimit = checkUserReportRateLimit(user.id);
+    const reportLimit = await checkUserReportRateLimit(user.id);
     if (!reportLimit.allowed) return jsonRateLimited(reportLimit.resetAt);
 
     const body = await request.json();

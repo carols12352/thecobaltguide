@@ -1,13 +1,23 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { DEFAULT_CARD_SLUG, DUPLICATE_DETECTION } from "@/config/constants";
+import { DEFAULT_CARD_SLUG, DUPLICATE_DETECTION, MAP_DEFAULTS } from "@/config/constants";
 import { parseGeoLocation } from "@/lib/map/parse-location";
 import { normalizeMerchantName, nameSimilarity } from "@/lib/utils";
+import { confidenceScoreForAdminLevel } from "@/server/services/aggregation";
 import type { CreatePlaceInput } from "@/server/validation/schemas";
-import type { AdminPlaceDetail, MapPlace, MultiplierValue, PlaceDetail, PlaceSummary } from "@/types/domain";
+import type { AdminPlaceDetail, ConfidenceLevel, MapPlace, MultiplierValue, PlaceDetail, PlaceSummary } from "@/types/domain";
 
 export class PlaceRepository {
+  private defaultCardProductIdPromise: Promise<string> | null = null;
+
   async getDefaultCardProductId(): Promise<string> {
+    if (!this.defaultCardProductIdPromise) {
+      this.defaultCardProductIdPromise = this.fetchDefaultCardProductId();
+    }
+    return this.defaultCardProductIdPromise;
+  }
+
+  private async fetchDefaultCardProductId(): Promise<string> {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("card_products")
@@ -16,6 +26,25 @@ export class PlaceRepository {
       .single();
     if (error || !data) throw new Error("Default card product not found");
     return data.id;
+  }
+
+  private mapViewportRows(data: Record<string, unknown>[] | null): MapPlace[] {
+    return (data ?? []).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      addressLine1: row.address_line1 as string | undefined,
+      city: row.city as string | undefined,
+      province: row.province as string | undefined,
+      latitude: row.latitude as number,
+      longitude: row.longitude as number,
+      multiplier: row.multiplier
+        ? (parseInt(row.multiplier as string, 10) as MapPlace["multiplier"])
+        : null,
+      confidenceLevel: row.confidence_level as MapPlace["confidenceLevel"],
+      recentReportCount: (row.recent_report_count as number) ?? 0,
+      lastReportedAt: (row.last_reported_at as string) ?? null,
+      category: row.category as string,
+    }));
   }
 
   async findInViewport(params: {
@@ -44,22 +73,261 @@ export class PlaceRepository {
 
     if (error) throw error;
 
-    return (data ?? []).map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      name: row.name as string,
-      addressLine1: row.address_line1 as string | undefined,
-      city: row.city as string | undefined,
-      province: row.province as string | undefined,
-      latitude: row.latitude as number,
-      longitude: row.longitude as number,
-      multiplier: row.multiplier
-        ? (parseInt(row.multiplier as string, 10) as MapPlace["multiplier"])
-        : null,
-      confidenceLevel: row.confidence_level as MapPlace["confidenceLevel"],
-      recentReportCount: (row.recent_report_count as number) ?? 0,
-      lastReportedAt: (row.last_reported_at as string) ?? null,
-      category: row.category as string,
-    }));
+    return this.mapViewportRows(data as Record<string, unknown>[] | null);
+  }
+
+  async countInViewport(params: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+    cardProductId?: string;
+    multiplier?: number;
+    category?: string;
+  }): Promise<number> {
+    const supabase = await createClient();
+    const cardId = params.cardProductId ?? (await this.getDefaultCardProductId());
+
+    const { data, error } = await supabase.rpc("count_places_in_viewport", {
+      p_north: params.north,
+      p_south: params.south,
+      p_east: params.east,
+      p_west: params.west,
+      p_card_product_id: cardId,
+      p_multiplier: params.multiplier?.toString() ?? null,
+      p_category: params.category ?? null,
+    });
+
+    if (error) throw error;
+    return Number(data ?? 0);
+  }
+
+  async findInViewNear(params: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+    latitude: number;
+    longitude: number;
+    cardProductId?: string;
+    multiplier?: number;
+    category?: string;
+    limit?: number;
+  }): Promise<MapPlace[]> {
+    const supabase = await createClient();
+    const cardId = params.cardProductId ?? (await this.getDefaultCardProductId());
+
+    const { data, error } = await supabase.rpc("places_in_view_near", {
+      p_north: params.north,
+      p_south: params.south,
+      p_east: params.east,
+      p_west: params.west,
+      p_latitude: params.latitude,
+      p_longitude: params.longitude,
+      p_card_product_id: cardId,
+      p_multiplier: params.multiplier?.toString() ?? null,
+      p_category: params.category ?? null,
+      p_limit: params.limit ?? MAP_DEFAULTS.maxResults,
+    });
+
+    if (error) throw error;
+    return this.mapViewportRows(data as Record<string, unknown>[] | null);
+  }
+
+  async countInCity(params: {
+    city: string;
+    province: string;
+    cardProductId?: string;
+    multiplier?: number;
+    category?: string;
+  }): Promise<number> {
+    const supabase = await createClient();
+    const cardId = params.cardProductId ?? (await this.getDefaultCardProductId());
+
+    if (params.multiplier) {
+      let query = supabase
+        .from("places")
+        .select("id, place_multiplier_summaries!inner(current_multiplier)", {
+          count: "exact",
+          head: true,
+        })
+        .eq("status", "active")
+        .eq("city", params.city)
+        .eq("province", params.province)
+        .eq("place_multiplier_summaries.card_product_id", cardId)
+        .eq(
+          "place_multiplier_summaries.current_multiplier",
+          params.multiplier.toString(),
+        );
+
+      if (params.category) {
+        query = query.eq("category", params.category);
+      }
+
+      const { count, error } = await query;
+      if (error) throw error;
+      return count ?? 0;
+    }
+
+    let query = supabase
+      .from("places")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .eq("city", params.city)
+      .eq("province", params.province);
+
+    if (params.category) {
+      query = query.eq("category", params.category);
+    }
+
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  async resolveCityNearPoint(
+    latitude: number,
+    longitude: number,
+    radiusMetres = MAP_DEFAULTS.cityResolveRadiusMetres,
+  ): Promise<{ city: string; province: string } | null> {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("places_nearby", {
+      p_latitude: latitude,
+      p_longitude: longitude,
+      p_radius_metres: radiusMetres,
+      p_limit: 1,
+    });
+
+    if (error) throw error;
+    const nearby = data?.[0] as { id?: string } | undefined;
+    if (!nearby?.id) return null;
+
+    const { data: place, error: placeError } = await supabase
+      .from("places")
+      .select("city, province")
+      .eq("id", nearby.id)
+      .maybeSingle();
+
+    if (placeError) throw placeError;
+    if (!place?.city || !place.province) return null;
+
+    return { city: place.city, province: place.province };
+  }
+
+  async findInCity(params: {
+    city: string;
+    province: string;
+    cardProductId?: string;
+    multiplier?: number;
+    category?: string;
+    limit?: number;
+  }): Promise<MapPlace[]> {
+    const supabase = await createClient();
+    const cardId = params.cardProductId ?? (await this.getDefaultCardProductId());
+    const limit = params.limit ?? MAP_DEFAULTS.cityMapClusterLimit;
+
+    if (params.multiplier) {
+      let query = supabase
+        .from("places")
+        .select(
+          `
+          id, name, address_line1, city, province, category, location,
+          place_multiplier_summaries!inner (
+            current_multiplier, confidence_level,
+            recent_report_count, last_reported_at
+          )
+        `,
+        )
+        .eq("status", "active")
+        .eq("city", params.city)
+        .eq("province", params.province)
+        .eq("place_multiplier_summaries.card_product_id", cardId)
+        .eq(
+          "place_multiplier_summaries.current_multiplier",
+          params.multiplier.toString(),
+        )
+        .limit(limit);
+
+      if (params.category) {
+        query = query.eq("category", params.category);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return this.mapPlacesWithSummaries(data ?? [], cardId);
+    }
+
+    let query = supabase
+      .from("places")
+      .select(
+        `
+        id, name, address_line1, city, province, category, location,
+        place_multiplier_summaries (
+          current_multiplier, confidence_level,
+          recent_report_count, last_reported_at, card_product_id
+        )
+      `,
+      )
+      .eq("status", "active")
+      .eq("city", params.city)
+      .eq("province", params.province)
+      .limit(limit);
+
+    if (params.category) {
+      query = query.eq("category", params.category);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return this.mapPlacesWithSummaries(data ?? [], cardId);
+  }
+
+  private mapPlacesWithSummaries(
+    rows: Record<string, unknown>[],
+    cardProductId: string,
+  ): MapPlace[] {
+    return rows.map((place) => {
+      const summaries = place.place_multiplier_summaries;
+      const summaryList = Array.isArray(summaries)
+        ? summaries
+        : summaries
+          ? [summaries]
+          : [];
+      const summary = summaryList.find(
+        (entry) =>
+          (entry as { card_product_id?: string }).card_product_id ===
+          cardProductId,
+      ) as
+        | {
+            current_multiplier?: string;
+            confidence_level?: MapPlace["confidenceLevel"];
+            recent_report_count?: number;
+            last_reported_at?: string | null;
+          }
+        | undefined;
+
+      const coords = parseGeoLocation(place.location) ?? {
+        latitude: 0,
+        longitude: 0,
+      };
+
+      return {
+        id: place.id as string,
+        name: place.name as string,
+        addressLine1: (place.address_line1 as string | null) ?? undefined,
+        city: (place.city as string | null) ?? undefined,
+        province: (place.province as string | null) ?? undefined,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        category: place.category as string,
+        multiplier: summary?.current_multiplier
+          ? (parseInt(summary.current_multiplier, 10) as MapPlace["multiplier"])
+          : null,
+        confidenceLevel: summary?.confidence_level ?? "insufficient",
+        recentReportCount: summary?.recent_report_count ?? 0,
+        lastReportedAt: summary?.last_reported_at ?? null,
+      };
+    });
   }
 
   async search(query: string, limit = 20): Promise<MapPlace[]> {
@@ -203,6 +471,18 @@ export class PlaceRepository {
       .eq("place_id", id)
       .eq("status", "open");
 
+    const { data: flagRows } = await supabase
+      .from("place_flags")
+      .select(
+        `
+        id, reason, details, status, created_at, resolved_at,
+        reporter:profiles!user_id ( username ),
+        resolver:profiles!resolved_by ( username )
+      `,
+      )
+      .eq("place_id", id)
+      .order("created_at", { ascending: false });
+
     const detail = this.mapPlaceDetail(place, summary);
     const creator = place.creator as { username: string | null } | null;
 
@@ -216,6 +496,20 @@ export class PlaceRepository {
       updatedAt: place.updated_at as string,
       cardProductId,
       openFlagCount: openFlagCount ?? 0,
+      flags: (flagRows ?? []).map((flag) => {
+        const reporter = profileUsername(flag.reporter);
+        const resolver = profileUsername(flag.resolver);
+        return {
+          id: flag.id as string,
+          reason: flag.reason as string,
+          details: flag.details as string | null,
+          status: flag.status as AdminPlaceDetail["flags"][number]["status"],
+          createdAt: flag.created_at as string,
+          resolvedAt: flag.resolved_at as string | null,
+          reporterUsername: reporter,
+          reviewedByUsername: resolver,
+        };
+      }),
     };
   }
 
@@ -224,7 +518,6 @@ export class PlaceRepository {
     cardProductId: string,
     updates: {
       confidenceLevel?: string;
-      confidenceScore?: number;
       currentMultiplier?: number;
     },
   ) {
@@ -235,9 +528,9 @@ export class PlaceRepository {
 
     if (updates.confidenceLevel) {
       dbUpdates.confidence_level = updates.confidenceLevel;
-    }
-    if (updates.confidenceScore !== undefined) {
-      dbUpdates.confidence_score = updates.confidenceScore;
+      dbUpdates.confidence_score = confidenceScoreForAdminLevel(
+        updates.confidenceLevel as ConfidenceLevel,
+      );
     }
     if (updates.currentMultiplier !== undefined) {
       dbUpdates.current_multiplier = updates.currentMultiplier.toString();
@@ -268,7 +561,9 @@ export class PlaceRepository {
         place_id: placeId,
         card_product_id: cardProductId,
         confidence_level: updates.confidenceLevel ?? "insufficient",
-        confidence_score: updates.confidenceScore ?? 0,
+        confidence_score: confidenceScoreForAdminLevel(
+          (updates.confidenceLevel ?? "insufficient") as ConfidenceLevel,
+        ),
         current_multiplier: updates.currentMultiplier?.toString() ?? null,
         ...dbUpdates,
       })
@@ -432,6 +727,17 @@ export class PlaceRepository {
       pageSize,
     };
   }
+}
+
+function profileUsername(
+  profile: unknown,
+): string | null {
+  if (!profile) return null;
+  if (Array.isArray(profile)) {
+    const first = profile[0] as { username?: string | null } | undefined;
+    return first?.username ?? null;
+  }
+  return (profile as { username?: string | null }).username ?? null;
 }
 
 export const placeRepository = new PlaceRepository();

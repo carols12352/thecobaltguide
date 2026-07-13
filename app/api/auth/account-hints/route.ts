@@ -16,7 +16,7 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   try {
     const ip = getClientIp(request);
-    const limit = checkRateLimit(`auth-hints:${ip}`, 20, 60 * 60 * 1000);
+    const limit = await checkRateLimit(`auth-hints:${ip}`, 20, 60 * 60 * 1000);
     if (!limit.allowed) return jsonRateLimited(limit.resetAt);
 
     const { searchParams } = new URL(request.url);

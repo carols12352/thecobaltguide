@@ -21,10 +21,10 @@ export async function POST(request: Request) {
     const user = await requireAuth();
     const ip = getClientIp(request);
 
-    const ipLimit = checkIpWriteRateLimit(ip);
+    const ipLimit = await checkIpWriteRateLimit(ip);
     if (!ipLimit.allowed) return jsonRateLimited(ipLimit.resetAt);
 
-    const placeLimit = checkUserPlaceRateLimit(user.id);
+    const placeLimit = await checkUserPlaceRateLimit(user.id);
     if (!placeLimit.allowed) return jsonRateLimited(placeLimit.resetAt);
 
     const body = await request.json();

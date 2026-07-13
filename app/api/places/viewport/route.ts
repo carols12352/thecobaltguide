@@ -8,7 +8,7 @@ import {
 } from "@/lib/api/response";
 import { captureException } from "@/lib/monitoring/sentry";
 import { placeService } from "@/server/services/place-service";
-import { viewportQuerySchema } from "@/server/validation/schemas";
+import { viewportDetailsQuerySchema } from "@/server/validation/schemas";
 
 function withServerTiming(
   response: Response,
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const parsed = viewportQuerySchema.safeParse(
+    const parsed = viewportDetailsQuerySchema.safeParse(
       Object.fromEntries(searchParams),
     );
 
@@ -33,27 +33,17 @@ export async function GET(request: Request) {
       return jsonValidationError(parsed.error.flatten());
     }
 
-    const {
-      viewNorth: _viewNorth,
-      viewSouth: _viewSouth,
-      viewEast: _viewEast,
-      viewWest: _viewWest,
-      latitude: _latitude,
-      longitude: _longitude,
-      ...gridQuery
-    } = parsed.data;
-
-    const result = await placeService.getMapPlaces(gridQuery, timing);
+    const result = await placeService.getViewportDetails(parsed.data, timing);
 
     return withServerTiming(
       jsonPublicCached(
         result,
-        publicCdnCacheControl(CDN_CACHE_DURATIONS.mapRegionSeconds),
+        publicCdnCacheControl(CDN_CACHE_DURATIONS.mapViewportDetailsSeconds),
       ),
       timing,
     );
   } catch (error) {
-    captureException(error, { route: "GET /api/places/map" });
-    return jsonError("Failed to load map places", 500);
+    captureException(error, { route: "GET /api/places/viewport" });
+    return jsonError("Failed to load viewport details", 500);
   }
 }

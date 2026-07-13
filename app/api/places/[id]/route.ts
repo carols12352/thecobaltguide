@@ -1,8 +1,9 @@
-import { CACHE_DURATIONS } from "@/config/constants";
+import { CDN_CACHE_DURATIONS } from "@/config/constants";
 import {
   jsonError,
   jsonNotFound,
   jsonPublicCached,
+  publicCdnCacheControl,
 } from "@/lib/api/response";
 import { captureException } from "@/lib/monitoring/sentry";
 import { placeService } from "@/server/services/place-service";
@@ -19,7 +20,7 @@ export async function GET(
 
     return jsonPublicCached(
       { place },
-      `public, max-age=0, s-maxage=${CACHE_DURATIONS.placeDetailsSeconds}, must-revalidate`,
+      publicCdnCacheControl(CDN_CACHE_DURATIONS.placeDetailsSeconds),
     );
   } catch (error) {
     captureException(error, { route: "GET /api/places/:id" });
