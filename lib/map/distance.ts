@@ -18,11 +18,22 @@ export function distanceMetres(
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Animation duration in ms from distance: near 0.5s, mid 1s, far 2s (max). */
+/** Fixed duration tiers for map moves — one distance lookup, no per-frame work. */
+export const MAP_MOVE_DURATION_TIERS = [
+  { maxDistanceMetres: 500, durationMs: 500 },
+  { maxDistanceMetres: 2_000, durationMs: 700 },
+  { maxDistanceMetres: 10_000, durationMs: 1_000 },
+  { maxDistanceMetres: 50_000, durationMs: 1_400 },
+  { maxDistanceMetres: Number.POSITIVE_INFINITY, durationMs: 3_000 },
+] as const;
+
+/** Map fly duration from a precomputed distance (fixed tier lookup). */
 export function getTransitionDurationMs(distanceMetres: number): number {
-  if (distanceMetres <= 2_000) return 500;
-  if (distanceMetres <= 10_000) return 1_000;
-  return 2_000;
+  for (const tier of MAP_MOVE_DURATION_TIERS) {
+    if (distanceMetres <= tier.maxDistanceMetres) return tier.durationMs;
+  }
+
+  return MAP_MOVE_DURATION_TIERS[MAP_MOVE_DURATION_TIERS.length - 1].durationMs;
 }
 
 export function sortPlacesByDistance(
