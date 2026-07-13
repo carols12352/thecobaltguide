@@ -22,7 +22,6 @@ import { streetFromMapboxPlaceName, cityFromMapboxPlaceName } from "@/lib/geocod
 import {
   filterBusinessGeocodeResults,
   filterGeocodeResultsForLookupContext,
-  filterGeocodeResultsForPostalCode,
   isPostalCodeLabel,
   pickPreferredGeocodeResult,
   rankBusinessGeocodeResults,
@@ -34,7 +33,6 @@ export type GeocodeSource = "address" | "postal";
 
 const MAX_RESULTS_PER_TIER = 5;
 const MAX_BUSINESS_RESULTS = 10;
-const MAX_TOTAL_RESULTS = 10;
 const NOMINATIM_BUSINESS_VIEWBOX_DELTA = 0.25;
 
 type MapboxFeature = {
@@ -173,7 +171,7 @@ export class GeocodingService {
       }
     }
 
-    let combined = dedupeGeocodeResults([
+    let combined: GeocodingResult[] = dedupeGeocodeResults([
       ...rawSets.flat(),
       ...searchBoxResults,
     ]).map((result) => ({
@@ -318,7 +316,7 @@ export class GeocodingService {
       }),
     );
 
-    let combined = dedupeGeocodeResults(queryResultSets.flat()).map(
+    let combined: GeocodingResult[] = dedupeGeocodeResults(queryResultSets.flat()).map(
       (result) => ({ ...result, matchTier: tier }),
     );
 

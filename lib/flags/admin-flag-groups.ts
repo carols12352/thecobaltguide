@@ -68,7 +68,10 @@ export function groupAdminFlags(flags: AdminFlagRow[]): AdminFlagGroup[] {
   }
 
   return Array.from(groups.values())
-    .map(({ reporterIds: _reporterIds, ...group }) => group)
+    .map(({ reporterIds, ...group }) => {
+      void reporterIds;
+      return group;
+    })
     .sort((a, b) => b.latestCreatedAt.localeCompare(a.latestCreatedAt));
 }
 

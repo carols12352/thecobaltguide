@@ -40,7 +40,10 @@ export function groupPlaceReports(reports: MultiplierReport[]): PlaceReportGroup
   }
 
   return Array.from(groups.values())
-    .map(({ reporterIds: _reporterIds, ...group }) => group)
+    .map(({ reporterIds, ...group }) => {
+      void reporterIds;
+      return group;
+    })
     .sort((a, b) =>
       b.latestTransactionDate.localeCompare(a.latestTransactionDate),
     );

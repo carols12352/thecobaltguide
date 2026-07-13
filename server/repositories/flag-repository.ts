@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { accountListSinceIso } from "@/lib/account/recent-list-window";
+import type { AdminFlagRow } from "@/lib/flags/admin-flag-groups";
 import type { CreateFlagInput } from "@/server/validation/schemas";
 import type { FlagReason, FlagStatus, UserPlaceFlag } from "@/types/domain";
 
@@ -167,7 +168,7 @@ export class FlagRepository {
     return count ?? 0;
   }
 
-  async findOpenForAdmin(limit = 50) {
+  async findOpenForAdmin(limit = 50): Promise<AdminFlagRow[]> {
     const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("place_flags")
@@ -185,7 +186,17 @@ export class FlagRepository {
     if (error) {
       throw new Error(`Admin flags query failed: ${error.message}`);
     }
-    return data;
+    return (data ?? []).map((row) => ({
+      id: row.id,
+      reason: row.reason,
+      details: row.details,
+      created_at: row.created_at,
+      place_id: row.place_id,
+      places: Array.isArray(row.places) ? (row.places[0] ?? null) : row.places,
+      reporter: Array.isArray(row.reporter)
+        ? (row.reporter[0] ?? null)
+        : row.reporter,
+    }));
   }
 
   async dismissOpenFlagsForPlace(placeId: string, resolvedBy: string) {

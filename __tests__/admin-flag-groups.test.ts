@@ -136,7 +136,7 @@ describe("uniqueReporterIdsForReview", () => {
     ]);
 
     const totalDelta = reporterIds.reduce(
-      (sum, _userId) => sum + reputationDeltaForFlagReview("open", "resolved"),
+      (sum) => sum + reputationDeltaForFlagReview("open", "resolved"),
       0,
     );
 

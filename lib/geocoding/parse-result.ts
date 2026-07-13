@@ -222,10 +222,10 @@ export function filterBusinessGeocodeResults(
   });
 }
 
-export function rankBusinessGeocodeResults(
-  results: GeocodingResult[],
+export function rankBusinessGeocodeResults<T extends GeocodingResult>(
+  results: T[],
   input: { name?: string; city?: string },
-): GeocodingResult[] {
+): T[] {
   const businessName = input.name?.trim()?.toLocaleLowerCase("en-CA") ?? "";
   const targetCity = input.city?.trim()?.toLocaleLowerCase("en-CA") ?? "";
 

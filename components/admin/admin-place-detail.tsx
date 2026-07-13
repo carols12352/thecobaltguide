@@ -43,6 +43,14 @@ import type {
 
 type GeocodeLookupInput = z.infer<typeof geocodeQuerySchema>;
 
+const EMPTY_GEOCODE_LOOKUP: GeocodeLookupInput = {
+  name: undefined,
+  addressLine1: undefined,
+  city: undefined,
+  province: undefined,
+  postalCode: undefined,
+};
+
 const LocationPicker = dynamic(
   () =>
     import("@/components/map/location-picker").then((m) => m.LocationPicker),
@@ -151,7 +159,7 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
         : "",
     );
     setLoading(false);
-  }, [placeId]);
+  }, [placeId, setConfidenceLevel, setCurrentMultiplier]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadPlace(), 0);
@@ -214,7 +222,8 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
 
   function mergeGeocodeResult(
     result: GeocodingResult,
-    lookup: GeocodeLookupInput = lastLookupInputRef.current ?? {},
+    lookup: GeocodeLookupInput =
+      lastLookupInputRef.current ?? EMPTY_GEOCODE_LOOKUP,
   ) {
     setAddressForm((current) =>
       current
