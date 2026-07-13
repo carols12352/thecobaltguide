@@ -33,15 +33,16 @@ export async function GET(request: Request) {
       return jsonValidationError(parsed.error.flatten());
     }
 
-    const {
-      viewNorth: _viewNorth,
-      viewSouth: _viewSouth,
-      viewEast: _viewEast,
-      viewWest: _viewWest,
-      latitude: _latitude,
-      longitude: _longitude,
-      ...gridQuery
-    } = parsed.data;
+    const gridQuery = {
+      north: parsed.data.north,
+      south: parsed.data.south,
+      east: parsed.data.east,
+      west: parsed.data.west,
+      zoom: parsed.data.zoom,
+      multiplier: parsed.data.multiplier,
+      category: parsed.data.category,
+      card: parsed.data.card,
+    };
 
     const result = await placeService.getMapPlaces(gridQuery, timing);
 

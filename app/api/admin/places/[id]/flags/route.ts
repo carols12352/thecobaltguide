@@ -5,7 +5,6 @@ import {
   jsonUnauthorized,
   jsonValidationError,
 } from "@/lib/api/response";
-import { adminRouteError } from "@/lib/api/admin-route-error";
 import { AuthError, requireModerator } from "@/lib/auth/session";
 import { captureException } from "@/lib/monitoring/sentry";
 import { moderationService } from "@/server/services/moderation-service";
