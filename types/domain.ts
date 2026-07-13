@@ -2,6 +2,7 @@ export type UserRole = "user" | "moderator" | "admin";
 export type UserStatus = "active" | "suspended";
 export type PlaceStatus = "active" | "permanently_closed" | "merged";
 export type ReportStatus = "active" | "removed" | "flagged";
+export type ReportKind = "new_location" | "error" | "update" | "confirm";
 export type FlagReason =
   | "duplicate"
   | "wrong_address"
@@ -76,6 +77,18 @@ export interface PlaceSummary {
   score5x: number;
 }
 
+/** Moderator-only place payload with internal metadata. */
+export interface AdminPlaceDetail extends PlaceDetail {
+  normalizedName: string;
+  externalPlaceId: string | null;
+  createdBy: string | null;
+  createdByUsername: string | null;
+  createdAt: string;
+  updatedAt: string;
+  cardProductId: string;
+  openFlagCount: number;
+}
+
 export interface MultiplierReport {
   id: string;
   placeId: string;
@@ -86,6 +99,7 @@ export interface MultiplierReport {
   paymentContext: PaymentContext;
   notes: string | null;
   status: ReportStatus;
+  reportKind: ReportKind;
   createdAt: string;
 }
 

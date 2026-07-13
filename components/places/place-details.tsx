@@ -107,6 +107,7 @@ function ReportForm({ placeId }: { placeId: string }) {
   );
   const [paymentContext, setPaymentContext] = useState("in_store");
   const [notes, setNotes] = useState("");
+  const [reportError, setReportError] = useState(false);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
 
@@ -123,6 +124,7 @@ function ReportForm({ placeId }: { placeId: string }) {
         transactionDate,
         paymentContext,
         notes: notes || undefined,
+        intent: reportError ? "error" : "normal",
       }),
     });
 
@@ -195,6 +197,21 @@ function ReportForm({ placeId }: { placeId: string }) {
               maxLength={500}
             />
           </div>
+
+          <label className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={reportError}
+              onChange={(e) => setReportError(e.target.checked)}
+              className="mt-0.5 rounded border-zinc-300"
+            />
+            <span>
+              Report incorrect multiplier information
+              <span className="mt-0.5 block text-xs text-zinc-500">
+                Sends this to moderators for review instead of a routine update.
+              </span>
+            </span>
+          </label>
 
           <Button type="submit" disabled={status === "loading"}>
             {status === "loading" ? "Submitting…" : "Submit Report"}

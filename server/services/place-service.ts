@@ -8,6 +8,7 @@ import {
   setCachedPlace,
   setCachedSearch,
 } from "@/lib/cache/place-cache";
+import { invalidateAdminCaches } from "@/lib/cache/admin-cache";
 import { placeRepository } from "@/server/repositories/place-repository";
 import type { CreatePlaceInput } from "@/server/validation/schemas";
 import type { MapPlace } from "@/types/domain";
@@ -70,6 +71,7 @@ export class PlaceService {
 
     const place = await placeRepository.create(input, userId);
     await invalidatePlaceReadCaches(place.id);
+    await invalidateAdminCaches();
     return { created: true as const, place };
   }
 }

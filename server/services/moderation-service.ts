@@ -1,6 +1,21 @@
 import { placeRepository } from "@/server/repositories/place-repository";
 import { flagRepository, userRepository } from "@/server/repositories/flag-repository";
 import { reportRepository } from "@/server/repositories/report-repository";
+import {
+  getCachedAdminFlags,
+  getCachedAdminPlaceDetail,
+  getCachedAdminPlacesSearch,
+  getCachedAdminReports,
+  getCachedAdminUser,
+  getCachedAdminUsers,
+  invalidateAdminCaches,
+  setCachedAdminFlags,
+  setCachedAdminPlaceDetail,
+  setCachedAdminPlacesSearch,
+  setCachedAdminReports,
+  setCachedAdminUser,
+  setCachedAdminUsers,
+} from "@/lib/cache/admin-cache";
 import { invalidatePlaceReadCaches } from "@/lib/cache/place-cache";
 import { summaryService } from "@/server/services/summary-service";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -8,7 +23,14 @@ import type { CreateFlagInput } from "@/server/validation/schemas";
 
 export class ModerationService {
   async getRecentReports(limit = 50) {
-    return reportRepository.findRecentForAdmin(limit);
+    const cached = await getCachedAdminReports<Awaited<
+      ReturnType<typeof reportRepository.findRecentForAdmin>
+    >>(limit);
+    if (cached) return cached;
+
+    const reports = await reportRepository.findRecentForAdmin(limit);
+    await setCachedAdminReports(limit, reports);
+    return reports;
   }
 
   async updateReportStatus(
@@ -23,15 +45,111 @@ export class ModerationService {
       moderationReason,
     );
 
+    let flag: Awaited<ReturnType<typeof flagRepository.create>> | null = null;
+    let dismissedFlagIds: string[] = [];
+
+    if (status === "flagged") {
+      const existing = await flagRepository.findOpenForPlace(report.placeId);
+      if (!existing) {
+        flag = await flagRepository.create(report.placeId, moderatorId, {
+          reason: "other",
+          details: moderationReason ?? "Needs review",
+        });
+      }
+    }
+
+    if (status === "active") {
+      const dismissed = await flagRepository.dismissOpenFlagsForPlace(
+        report.placeId,
+        moderatorId,
+      );
+      dismissedFlagIds = dismissed.map((entry) => entry.id);
+    }
+
     await summaryService.refreshPlaceSummary(report.placeId, report.cardProductId);
     await invalidatePlaceReadCaches(report.placeId);
+    await invalidateAdminCaches();
     await this.logAction(moderatorId, "multiplier_report", reportId, status, moderationReason);
 
-    return report;
+    return { report, flag, dismissedFlagIds };
+  }
+
+  async approveReport(reportId: string, moderatorId: string) {
+    const report = await reportRepository.approveReport(reportId, moderatorId);
+    const dismissed = await flagRepository.dismissOpenFlagsForPlace(
+      report.placeId,
+      moderatorId,
+    );
+    const dismissedFlagIds = dismissed.map((entry) => entry.id);
+
+    await summaryService.refreshPlaceSummary(report.placeId, report.cardProductId);
+    await invalidatePlaceReadCaches(report.placeId);
+    await invalidateAdminCaches();
+    await this.logAction(moderatorId, "multiplier_report", reportId, "approve");
+
+    return { report, dismissedFlagIds };
   }
 
   async getOpenFlags(limit = 50) {
-    return flagRepository.findOpenForAdmin(limit);
+    const cached = await getCachedAdminFlags<Awaited<
+      ReturnType<typeof flagRepository.findOpenForAdmin>
+    >>(limit);
+    if (cached) return cached;
+
+    const flags = await flagRepository.findOpenForAdmin(limit);
+    await setCachedAdminFlags(limit, flags);
+    return flags;
+  }
+
+  async getPlacesForAdmin(options: {
+    query?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  } = {}) {
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.min(50, Math.max(1, options.pageSize ?? 10));
+    const cacheParams = {
+      query: options.query,
+      status: options.status,
+      page,
+      pageSize,
+    };
+
+    const cached = await getCachedAdminPlacesSearch<Awaited<
+      ReturnType<typeof placeRepository.searchForAdmin>
+    >>(cacheParams);
+    if (cached) return cached;
+
+    const result = await placeRepository.searchForAdmin({
+      ...options,
+      page,
+      pageSize,
+    });
+    await setCachedAdminPlacesSearch(cacheParams, result);
+    return result;
+  }
+
+  async getUsersForAdmin(limit = 100) {
+    const cached = await getCachedAdminUsers<Awaited<
+      ReturnType<typeof userRepository.findForAdmin>
+    >>(limit);
+    if (cached) return cached;
+
+    const users = await userRepository.findForAdmin(limit);
+    await setCachedAdminUsers(limit, users);
+    return users;
+  }
+
+  async getUserForAdmin(userId: string) {
+    const cached = await getCachedAdminUser<Awaited<
+      ReturnType<typeof userRepository.findByIdForAdmin>
+    >>(userId);
+    if (cached) return cached;
+
+    const user = await userRepository.findByIdForAdmin(userId);
+    if (user) await setCachedAdminUser(userId, user);
+    return user;
   }
 
   async resolveFlag(
@@ -40,11 +158,75 @@ export class ModerationService {
     moderatorId: string,
   ) {
     const flag = await flagRepository.updateStatus(flagId, status, moderatorId);
+    let clearedReports = false;
+
+    if (status === "resolved" || status === "dismissed") {
+      const openCount = await flagRepository.countOpenForPlace(flag.place_id);
+      if (openCount === 0) {
+        await reportRepository.clearFlaggedForPlace(flag.place_id);
+        clearedReports = true;
+      }
+      await invalidatePlaceReadCaches(flag.place_id);
+    }
+
+    await invalidateAdminCaches();
     await this.logAction(moderatorId, "place_flag", flagId, status);
-    return flag;
+    return { flag, clearedReports, placeId: flag.place_id as string };
+  }
+
+  async getPlaceForAdmin(placeId: string) {
+    const cached = await getCachedAdminPlaceDetail(placeId);
+    if (cached) return cached;
+
+    const place = await placeRepository.findByIdForAdmin(placeId);
+    if (place) await setCachedAdminPlaceDetail(place);
+    return place;
   }
 
   async updatePlace(
+    placeId: string,
+    updates: Record<string, unknown>,
+    moderatorId: string,
+  ) {
+    const summaryUpdates = updates.summary as
+      | {
+          confidenceLevel?: string;
+          confidenceScore?: number;
+          currentMultiplier?: number;
+        }
+      | undefined;
+    const placeUpdates = { ...updates };
+    delete placeUpdates.summary;
+
+    let placeRecord: Record<string, unknown> | null = null;
+
+    if (Object.keys(placeUpdates).length > 0) {
+      placeRecord = await this.updatePlaceFields(
+        placeId,
+        placeUpdates,
+        moderatorId,
+      );
+    }
+
+    if (summaryUpdates && Object.keys(summaryUpdates).length > 0) {
+      const cardProductId = await placeRepository.getDefaultCardProductId();
+      await placeRepository.upsertSummaryForAdmin(
+        placeId,
+        cardProductId,
+        summaryUpdates,
+      );
+      await invalidatePlaceReadCaches(placeId);
+      await invalidateAdminCaches();
+      await this.logAction(moderatorId, "place", placeId, "update_summary", undefined, summaryUpdates);
+    }
+
+    if (placeRecord) return placeRecord;
+
+    const place = await placeRepository.findByIdForAdmin(placeId);
+    return place;
+  }
+
+  private async updatePlaceFields(
     placeId: string,
     updates: Record<string, unknown>,
     moderatorId: string,
@@ -70,6 +252,7 @@ export class ModerationService {
 
     if (error) throw error;
     await invalidatePlaceReadCaches(placeId);
+    await invalidateAdminCaches();
     await this.logAction(moderatorId, "place", placeId, "update");
     return data;
   }
@@ -96,6 +279,7 @@ export class ModerationService {
     await summaryService.refreshPlaceSummary(targetPlaceId, cardProductId);
     await invalidatePlaceReadCaches(targetPlaceId);
     await invalidatePlaceReadCaches(sourcePlaceId);
+    await invalidateAdminCaches();
 
     await this.logAction(moderatorId, "place", sourcePlaceId, "merge", reason, {
       targetPlaceId,
@@ -110,12 +294,16 @@ export class ModerationService {
     adminId: string,
   ) {
     const profile = await userRepository.updateProfile(userId, updates);
+    await invalidateAdminCaches();
     await this.logAction(adminId, "profile", userId, "update", undefined, updates);
     return profile;
   }
 
   async submitFlag(placeId: string, userId: string, input: CreateFlagInput) {
-    return flagRepository.create(placeId, userId, input);
+    const flag = await flagRepository.create(placeId, userId, input);
+    await invalidatePlaceReadCaches(placeId);
+    await invalidateAdminCaches();
+    return flag;
   }
 
   private async logAction(

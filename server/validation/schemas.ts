@@ -1,6 +1,19 @@
 import { z } from "zod";
 import { CATEGORY_VALUES } from "@/config/categories";
-import { MULTIPLIER_OPTIONS } from "@/config/constants";
+import { CONFIDENCE_LEVELS, MULTIPLIER_OPTIONS } from "@/config/constants";
+import {
+  CANADIAN_POSTAL_CODE_MESSAGE,
+  isValidCanadianPostalCode,
+  normalizeCanadianPostalCode,
+} from "@/lib/validation/canadian-postal-code";
+
+export const canadianPostalCodeSchema = z
+  .string()
+  .trim()
+  .min(1, "Postal code is required")
+  .max(20)
+  .refine(isValidCanadianPostalCode, { message: CANADIAN_POSTAL_CODE_MESSAGE })
+  .transform(normalizeCanadianPostalCode);
 
 export const viewportQuerySchema = z.object({
   north: z.coerce.number().min(-90).max(90),
@@ -24,19 +37,19 @@ export const searchQuerySchema = z.object({
 });
 
 export const geocodeQuerySchema = z.object({
-  name: z.string().max(200).optional(),
-  addressLine1: z.string().min(1).max(300),
-  city: z.string().min(1).max(100),
-  province: z.string().min(1).max(100),
-  postalCode: z.string().min(1).max(20),
+  name: z.string().trim().max(200).optional(),
+  addressLine1: z.string().trim().min(1).max(300),
+  city: z.string().trim().min(1).max(100),
+  province: z.string().trim().min(1).max(100),
+  postalCode: canadianPostalCodeSchema,
 });
 
 export const createPlaceSchema = z.object({
-  name: z.string().min(1).max(200),
-  addressLine1: z.string().min(1).max(300),
-  city: z.string().min(1).max(100),
-  province: z.string().min(1).max(100),
-  postalCode: z.string().min(1).max(20),
+  name: z.string().trim().min(1).max(200),
+  addressLine1: z.string().trim().min(1).max(300),
+  city: z.string().trim().min(1).max(100),
+  province: z.string().trim().min(1).max(100),
+  postalCode: canadianPostalCodeSchema,
   countryCode: z.string().length(2).default("CA"),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -63,6 +76,7 @@ export const createReportSchema = z.object({
   ]),
   notes: z.string().max(500).optional(),
   cardProductId: z.string().uuid().optional(),
+  intent: z.enum(["normal", "error"]).default("normal"),
 });
 
 export const createFlagSchema = z.object({
@@ -77,13 +91,29 @@ export const createFlagSchema = z.object({
   details: z.string().max(1000).optional(),
 });
 
-export const adminReportPatchSchema = z.object({
-  status: z.enum(["active", "removed", "flagged"]),
-  moderationReason: z.string().max(500).optional(),
-});
+export const adminReportPatchSchema = z
+  .object({
+    status: z.enum(["active", "removed", "flagged"]).optional(),
+    approve: z.literal(true).optional(),
+    moderationReason: z.string().max(500).optional(),
+  })
+  .refine((data) => data.approve === true || data.status !== undefined, {
+    message: "Provide status or approve",
+  });
 
 export const adminFlagPatchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]),
+});
+
+export const adminPlaceSummaryPatchSchema = z.object({
+  confidenceLevel: z
+    .enum([...CONFIDENCE_LEVELS] as [string, ...string[]])
+    .optional(),
+  confidenceScore: z.coerce.number().min(0).max(1).optional(),
+  currentMultiplier: z.coerce
+    .number()
+    .refine((v) => MULTIPLIER_OPTIONS.includes(v as 1 | 2 | 3 | 5))
+    .optional(),
 });
 
 export const adminPlacePatchSchema = z.object({
@@ -95,6 +125,7 @@ export const adminPlacePatchSchema = z.object({
   category: z.enum(CATEGORY_VALUES as [string, ...string[]]).optional(),
   acceptsAmex: z.boolean().optional(),
   status: z.enum(["active", "permanently_closed", "merged"]).optional(),
+  summary: adminPlaceSummaryPatchSchema.optional(),
 });
 
 export const adminPlaceMergeSchema = z.object({
