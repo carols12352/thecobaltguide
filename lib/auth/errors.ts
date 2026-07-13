@@ -26,7 +26,7 @@ export function formatAuthError(error: { message?: string; code?: string }): str
   }
 
   if (message.includes("rate limit") || code === "over_email_send_rate_limit") {
-    return "Too many attempts. Please wait a few minutes and try again.";
+    return "Too many email requests. Please wait 60 seconds before trying again.";
   }
 
   return error.message ?? "Something went wrong. Please try again.";
