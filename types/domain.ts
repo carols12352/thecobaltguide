@@ -110,6 +110,40 @@ export interface AdminPlaceFlag {
   reviewedByUsername: string | null;
 }
 
+/** Moderator queue item: open flags merged by place. */
+export interface AdminFlagGroupItem {
+  id: string;
+  reason: FlagReason;
+  details: string | null;
+  createdAt: string;
+  reporter: { id: string; username: string | null };
+}
+
+export interface AdminFlagGroup {
+  placeId: string;
+  placeName: string | null;
+  placeCity: string | null;
+  flagCount: number;
+  reporterCount: number;
+  reasons: FlagReason[];
+  latestCreatedAt: string;
+  flags: AdminFlagGroupItem[];
+}
+
+export interface UserPlaceFlag {
+  id: string;
+  placeId: string;
+  userId: string;
+  reason: FlagReason;
+  details: string | null;
+  status: FlagStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+  placeName: string | null;
+  placeCity: string | null;
+  placeProvince: string | null;
+}
+
 export interface MultiplierReport {
   id: string;
   placeId: string;
@@ -121,7 +155,18 @@ export interface MultiplierReport {
   notes: string | null;
   status: ReportStatus;
   reportKind: ReportKind;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
   createdAt: string;
+}
+
+/** Public grouped view of recent reports on a place. */
+export interface PlaceReportGroup {
+  multiplier: MultiplierValue;
+  paymentContext: PaymentContext;
+  reporterCount: number;
+  reportCount: number;
+  latestTransactionDate: string;
 }
 
 export interface CardProduct {
@@ -172,4 +217,7 @@ export interface GeocodingResult {
   latitude: number;
   longitude: number;
   externalPlaceId: string;
+  /** Full provider label (e.g. Nominatim display_name) for metro/region matching. */
+  geocodeLabel?: string;
+  matchTier?: import("@/lib/geocoding/address-query").GeocodeMatchTier;
 }
