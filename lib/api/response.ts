@@ -4,6 +4,42 @@ export function jsonOk<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data, { status: 200, ...init });
 }
 
+const PRIVATE_NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+} as const;
+
+/** JSON for authenticated admin routes — never cache in browser or CDN. */
+export function jsonAdmin<T>(data: T, init?: ResponseInit) {
+  return NextResponse.json(data, {
+    status: 200,
+    ...init,
+    headers: {
+      ...PRIVATE_NO_STORE_HEADERS,
+      ...(init?.headers instanceof Headers
+        ? Object.fromEntries(init.headers.entries())
+        : init?.headers),
+    },
+  });
+}
+
+/** JSON for public map/search data — always revalidate, short CDN TTL. */
+export function jsonPublicCached<T>(
+  data: T,
+  cacheControl: string,
+  init?: ResponseInit,
+) {
+  return NextResponse.json(data, {
+    status: 200,
+    ...init,
+    headers: {
+      "Cache-Control": cacheControl,
+      ...(init?.headers instanceof Headers
+        ? Object.fromEntries(init.headers.entries())
+        : init?.headers),
+    },
+  });
+}
+
 export function jsonCreated<T>(data: T) {
   return NextResponse.json(data, { status: 201 });
 }

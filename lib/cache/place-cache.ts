@@ -2,13 +2,15 @@ import { CACHE_DURATIONS } from "@/config/constants";
 import {
   cacheDel,
   cacheGet,
-  cacheIncr,
+  cacheGetVersion,
+  cacheBumpVersion,
   cacheSet,
   isRedisReadConfigured,
   isRedisWriteConfigured,
 } from "@/lib/cache/redis";
 import {
   MAP_VERSION_KEY,
+  SEARCH_VERSION_KEY,
   mapCacheKey,
   placeCacheKey,
   searchCacheKey,
@@ -16,17 +18,25 @@ import {
 import type { MapPlace, PlaceDetail } from "@/types/domain";
 
 export async function getMapCacheVersion(): Promise<number> {
-  if (!isRedisReadConfigured()) return 0;
-
-  const version = await cacheGet<number>(MAP_VERSION_KEY);
-  return version ?? 1;
+  if (!isRedisReadConfigured() && !isRedisWriteConfigured()) return 0;
+  return cacheGetVersion(MAP_VERSION_KEY);
 }
 
 async function getMapCacheVersionForWrite(): Promise<number> {
-  if (!isRedisReadConfigured()) return 1;
+  if (!isRedisReadConfigured() && !isRedisWriteConfigured()) return 1;
+  const version = await cacheGetVersion(MAP_VERSION_KEY);
+  return version || 1;
+}
 
-  const version = await cacheGet<number>(MAP_VERSION_KEY);
-  return version ?? 1;
+async function getSearchCacheVersion(): Promise<number> {
+  if (!isRedisReadConfigured() && !isRedisWriteConfigured()) return 0;
+  return cacheGetVersion(SEARCH_VERSION_KEY);
+}
+
+async function getSearchCacheVersionForWrite(): Promise<number> {
+  if (!isRedisReadConfigured() && !isRedisWriteConfigured()) return 1;
+  const version = await cacheGetVersion(SEARCH_VERSION_KEY);
+  return version || 1;
 }
 
 export async function getCachedMapPlaces(
@@ -74,8 +84,9 @@ export async function getCachedSearch(
   query: string,
   limit: number,
 ): Promise<MapPlace[] | null> {
-  if (!isRedisReadConfigured()) return null;
-  return cacheGet<MapPlace[]>(searchCacheKey(query, limit));
+  const version = await getSearchCacheVersion();
+  if (version === 0) return null;
+  return cacheGet<MapPlace[]>(searchCacheKey(version, query, limit));
 }
 
 export async function setCachedSearch(
@@ -85,16 +96,26 @@ export async function setCachedSearch(
 ): Promise<void> {
   if (!isRedisWriteConfigured()) return;
 
+  const version = await getSearchCacheVersionForWrite();
   await cacheSet(
-    searchCacheKey(query, limit),
+    searchCacheKey(version, query, limit),
     places,
     CACHE_DURATIONS.searchSeconds,
   );
 }
 
-/** Invalidate read caches after DB writes. Map uses a version bump. */
+/** Invalidate read caches after DB writes. Map and search use version bumps. */
 export async function invalidatePlaceReadCaches(placeId: string): Promise<void> {
-  if (!isRedisWriteConfigured()) return;
+  if (!isRedisWriteConfigured()) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[redis] place cache not invalidated — missing write token");
+    }
+    return;
+  }
 
-  await Promise.all([cacheDel(placeCacheKey(placeId)), cacheIncr(MAP_VERSION_KEY)]);
+  await Promise.all([
+    cacheDel(placeCacheKey(placeId)),
+    cacheBumpVersion(MAP_VERSION_KEY),
+    cacheBumpVersion(SEARCH_VERSION_KEY),
+  ]);
 }

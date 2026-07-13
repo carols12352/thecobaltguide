@@ -2,6 +2,14 @@ export const DEFAULT_CARD_SLUG = "amex-cobalt-ca";
 
 export const MULTIPLIER_OPTIONS = [1, 2, 3, 5] as const;
 
+export const CONFIDENCE_LEVELS = [
+  "insufficient",
+  "disputed",
+  "medium",
+  "high",
+  "recently_confirmed",
+] as const;
+
 export const RATE_LIMITS = {
   maxReportsPerUserPerDay: 20,
   maxPlacesPerUserPerDay: 5,
@@ -22,6 +30,8 @@ export const CACHE_DURATIONS = {
   mapRegionSeconds: 86400,
   searchSeconds: 300,
   brandCategorySeconds: 86400,
+  adminListSeconds: 120,
+  adminPlaceDetailSeconds: 120,
 } as const;
 
 export const DUPLICATE_DETECTION = {
@@ -43,3 +53,5 @@ export const CONFIDENCE_THRESHOLDS = {
   recentlyConfirmedDays: 30,
   recentlyConfirmedMinReports: 2,
 } as const;
+
+export const AUTH_EMAIL_COOLDOWN_SECONDS = 60;

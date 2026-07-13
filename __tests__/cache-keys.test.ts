@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mapCacheKey, placeCacheKey } from "@/lib/cache/keys";
+import {
+  adminPlacesCacheKey,
+  adminReportsCacheKey,
+  mapCacheKey,
+  placeCacheKey,
+} from "@/lib/cache/keys";
 
 describe("cache keys", () => {
   it("builds stable map cache keys for rounded viewport bounds", () => {
@@ -37,5 +42,23 @@ describe("cache keys", () => {
 
   it("builds place cache keys", () => {
     expect(placeCacheKey("abc-123")).toBe("cobalt:cache:place:v1:abc-123");
+  });
+
+  it("builds stable admin places cache keys", () => {
+    const params = {
+      query: "  Toronto  ",
+      status: "active",
+      page: 2,
+      pageSize: 10,
+    };
+
+    expect(adminPlacesCacheKey(1, params)).toBe(
+      "cobalt:cache:admin:v1:1:places:toronto:active:2:10",
+    );
+    expect(adminPlacesCacheKey(2, params)).not.toBe(adminPlacesCacheKey(1, params));
+  });
+
+  it("builds admin reports cache keys", () => {
+    expect(adminReportsCacheKey(3, 50)).toBe("cobalt:cache:admin:v1:3:reports:50");
   });
 });

@@ -69,6 +69,22 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
+/** Read a cache version key from the write client when available to avoid read-replica lag. */
+export async function cacheGetVersion(key: string): Promise<number> {
+  if (!isRedisReadConfigured() && !isRedisWriteConfigured()) return 0;
+
+  const redis = getRedisWrite() ?? getRedisRead();
+  if (!redis) return 0;
+
+  try {
+    const version = await redis.get<number>(key);
+    return version ?? 1;
+  } catch (error) {
+    logRedisError(`GET version ${key}`, error);
+    return 0;
+  }
+}
+
 export async function cacheSet(
   key: string,
   value: unknown,
@@ -95,15 +111,28 @@ export async function cacheDel(key: string): Promise<void> {
   }
 }
 
-export async function cacheIncr(key: string): Promise<void> {
+export async function cacheBumpVersion(key: string): Promise<number> {
   const redis = getRedisWrite();
-  if (!redis) return;
+  if (!redis) return 0;
 
   try {
-    await redis.incr(key);
+    // INCR on a missing key starts at 1, which matches our default read version and
+    // would not invalidate anything. Seed with 1 so the subsequent INCR always bumps.
+    await redis.set(key, 1, { nx: true });
+    const next = await redis.incr(key);
+    if (process.env.NODE_ENV === "development") {
+      console.info(`[redis] bumped ${key} -> ${next}`);
+    }
+    return next;
   } catch (error) {
-    logRedisError(`INCR ${key}`, error);
+    logRedisError(`BUMP ${key}`, error);
+    return 0;
   }
+}
+
+/** @deprecated Use cacheBumpVersion for cache version keys. */
+export async function cacheIncr(key: string): Promise<void> {
+  await cacheBumpVersion(key);
 }
 
 if (process.env.NODE_ENV === "development") {
