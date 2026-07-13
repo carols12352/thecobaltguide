@@ -7,6 +7,7 @@ import { AuthDivider, AuthShell, GoogleIcon } from "@/components/auth/auth-shell
 import { EmailSentDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Label } from "@/components/ui/label";
 import { AUTH_EMAIL_COOLDOWN_SECONDS } from "@/config/constants";
 import { formatAuthError } from "@/lib/auth/errors";
@@ -240,9 +241,8 @@ export function SignInForm() {
                   Forgot password?
                 </button>
               </div>
-              <Input
+              <PasswordInput
                 id="sign-in-password"
-                type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

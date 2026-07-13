@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 import { PasswordDotsInput } from "@/components/auth/password-dots-input";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   analyzePasswordOverlay,
@@ -170,9 +170,8 @@ export function PasswordSetForm({
       {mode === "update" && (
         <div className="space-y-1.5">
           <Label htmlFor="account-current-password">Current password</Label>
-          <Input
+          <PasswordInput
             id="account-current-password"
-            type="password"
             autoComplete="current-password"
             value={currentPassword}
             onChange={(event) => onCurrentPasswordChange?.(event.target.value)}

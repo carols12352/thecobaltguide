@@ -7,6 +7,7 @@ import { AuthDivider, AuthShell, GoogleIcon } from "@/components/auth/auth-shell
 import { EmailSentDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/auth/password-input";
 import { Label } from "@/components/ui/label";
 import { formatAuthError } from "@/lib/auth/errors";
 import { getExistingAccountMessage } from "@/lib/auth/account-hints-client";
@@ -154,9 +155,8 @@ export function SignUpForm() {
 
           <div className="space-y-1.5">
             <Label htmlFor="sign-up-password">Password</Label>
-            <Input
+            <PasswordInput
               id="sign-up-password"
-              type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -168,9 +168,8 @@ export function SignUpForm() {
 
           <div className="space-y-1.5">
             <Label htmlFor="sign-up-confirm">Confirm password</Label>
-            <Input
+            <PasswordInput
               id="sign-up-confirm"
-              type="password"
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

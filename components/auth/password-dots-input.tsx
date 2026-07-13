@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { PasswordVisibilityIcon } from "@/components/auth/password-input";
 import {
   analyzeConfirmOverlay,
   analyzePasswordOverlay,
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 /** Shared monospace sizing so overlay columns line up with native password bullets. */
 export const PASSWORD_INPUT_CLASS =
-  "password-char-input h-8 py-1 font-mono tracking-normal";
+  "password-char-input h-8 py-1 pr-10 font-mono tracking-normal";
 
 interface PasswordDotsInputProps {
   id: string;
@@ -241,6 +242,7 @@ export function PasswordDotsInput({
   overlayField,
 }: PasswordDotsInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   const segments = useMemo(() => {
     if (compareWith === undefined || overlayField === undefined) {
@@ -268,7 +270,7 @@ export function PasswordDotsInput({
       <Input
         ref={inputRef}
         id={id}
-        type="password"
+        type={passwordVisible ? "text" : "password"}
         autoComplete="new-password"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -276,6 +278,16 @@ export function PasswordDotsInput({
         required={required}
         className={cn(PASSWORD_INPUT_CLASS, className)}
       />
+      <button
+        type="button"
+        onClick={() => setPasswordVisible((visible) => !visible)}
+        aria-label={passwordVisible ? "Hide password" : "Show password"}
+        aria-pressed={passwordVisible}
+        title={passwordVisible ? "Hide password" : "Show password"}
+        className="absolute right-1 top-1/2 z-20 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cobalt-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      >
+        <PasswordVisibilityIcon visible={passwordVisible} />
+      </button>
     </div>
   );
 }
