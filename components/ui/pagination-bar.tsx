@@ -1,8 +1,9 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useElementWidth } from "@/lib/hooks/use-element-width";
 import { useViewportWidth } from "@/lib/hooks/use-viewport-width";
 import { cn } from "@/lib/utils";
 import {
@@ -17,6 +18,8 @@ export interface PaginationBarProps {
   itemLabel?: string;
   loading?: boolean;
   compact?: boolean;
+  /** Explicit layout width (e.g. sidebar width in px). Overrides self-measurement. */
+  availableWidth?: number;
   onPageChange: (page: number) => void;
   className?: string;
 }
@@ -49,15 +52,28 @@ export function PaginationBar({
   itemLabel = "results",
   loading = false,
   compact = false,
+  availableWidth,
   onPageChange,
   className,
 }: PaginationBarProps) {
+  const controlsRef = useRef<HTMLDivElement>(null);
   const jumpInputId = useId();
   const viewportWidth = useViewportWidth();
+  const measuredWidth = useElementWidth(controlsRef, compact ? 320 : viewportWidth);
   const [jumpValue, setJumpValue] = useState("");
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const siblingCount = getPaginationSiblingCount(viewportWidth);
+  const compactPadding = compact ? 24 : 32;
+  const layoutWidth = availableWidth ?? measuredWidth;
+  const siblingWidth = Math.max(
+    0,
+    layoutWidth - (availableWidth != null || compact ? compactPadding : 0),
+  );
+  const siblingCount = getPaginationSiblingCount(
+    compact ? siblingWidth : layoutWidth,
+    page,
+    totalPages,
+  );
   const pages = useMemo(
     () => getPaginationRange(page, totalPages, siblingCount),
     [page, siblingCount, totalPages],
@@ -81,20 +97,25 @@ export function PaginationBar({
   return (
     <div
       className={cn(
-        "rounded-xl border border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-900/40",
-        compact ? "px-3 py-2" : "px-4 py-3",
+        "min-w-0 max-w-full rounded-xl border border-zinc-200 bg-zinc-50/70 dark:border-zinc-800 dark:bg-zinc-900/40",
+        compact ? "w-full px-3 py-2" : "px-4 py-3",
         className,
       )}
     >
       <div
         className={cn(
-          "flex gap-3",
+          "flex min-w-0 gap-3",
           compact
             ? "flex-col"
             : "flex-col lg:flex-row lg:items-center lg:justify-between",
         )}
       >
-        <p className="min-w-0 text-sm text-zinc-600 dark:text-zinc-400">
+        <p
+          className={cn(
+            "min-w-0 shrink-0 text-sm text-zinc-600 dark:text-zinc-400",
+            compact && "w-full text-center",
+          )}
+        >
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
             {rangeStart}–{rangeEnd}
           </span>{" "}
@@ -109,13 +130,19 @@ export function PaginationBar({
 
         {totalPages > 1 ? (
           <div
+            ref={controlsRef}
             className={cn(
-              "flex min-w-0 items-center gap-3",
-              compact ? "w-full overflow-x-auto" : "flex-wrap",
+              "flex min-w-0 max-w-full items-center gap-3",
+              compact
+                ? "w-full justify-center"
+                : "flex-wrap justify-end lg:justify-start",
             )}
           >
             <nav
-              className="inline-flex shrink-0 items-center overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-950"
+              className={cn(
+                "flex items-center overflow-x-auto overscroll-x-contain rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-950",
+                compact ? "w-fit max-w-full" : "inline-flex max-w-full",
+              )}
               aria-label="Pagination"
             >
               <PaginationEdgeButton
@@ -126,7 +153,7 @@ export function PaginationBar({
                 <ChevronIcon direction="left" />
               </PaginationEdgeButton>
 
-              <div className="flex items-center border-x border-zinc-200 px-1 dark:border-zinc-700">
+              <div className="flex shrink-0 items-center border-x border-zinc-200 px-1 dark:border-zinc-700">
                 {pages.map((item, index) =>
                   item === "ellipsis" ? (
                     <span
@@ -168,7 +195,7 @@ export function PaginationBar({
             {!compact && viewportWidth >= 768 ? (
               <form
                 onSubmit={submitJump}
-                className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400"
+                className="flex shrink-0 items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400"
               >
                 <label htmlFor={jumpInputId}>Go to</label>
                 <Input

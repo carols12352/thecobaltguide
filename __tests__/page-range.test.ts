@@ -1,14 +1,37 @@
 import { describe, expect, it } from "vitest";
 import {
+  getPaginationMaxSlots,
   getPaginationRange,
   getPaginationSiblingCount,
 } from "@/lib/pagination/page-range";
 
 describe("getPaginationSiblingCount", () => {
-  it("returns fewer siblings on narrow viewports", () => {
-    expect(getPaginationSiblingCount(400)).toBe(0);
-    expect(getPaginationSiblingCount(700)).toBe(2);
-    expect(getPaginationSiblingCount(1300)).toBe(4);
+  it("uses the maximum sibling count that fits in available width", () => {
+    const page = 5;
+    const total = 20;
+
+    expect(getPaginationSiblingCount(200, page, total)).toBe(0);
+    expect(getPaginationSiblingCount(280, page, total)).toBe(0);
+
+    const slots360 = getPaginationMaxSlots(360);
+    const sibling360 = getPaginationSiblingCount(360, page, total);
+    expect(getPaginationRange(page, total, sibling360).length).toBeLessThanOrEqual(
+      slots360,
+    );
+    expect(
+      getPaginationRange(page, total, sibling360 + 1).length,
+    ).toBeGreaterThan(slots360);
+
+    const slots400 = getPaginationMaxSlots(400);
+    const sibling400 = getPaginationSiblingCount(400, page, total);
+    expect(getPaginationRange(page, total, sibling400).length).toBeLessThanOrEqual(
+      slots400,
+    );
+  });
+
+  it("shows all pages when total fits in the available width", () => {
+    expect(getPaginationSiblingCount(700, 2, 5)).toBe(5);
+    expect(getPaginationRange(2, 5, 5)).toEqual([1, 2, 3, 4, 5]);
   });
 });
 
