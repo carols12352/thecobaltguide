@@ -1,10 +1,12 @@
 /**
- * Import Rewards Canada Cobalt multiplier data into Supabase.
+ * Historical import: Rewards Canada Cobalt multiplier data into Supabase.
  *
- * Usage:
- *   npx tsx scripts/import-rewards-canada.ts --dry-run --limit 10
- *   npx tsx scripts/import-rewards-canada.ts --geocode city
- *   npx tsx scripts/import-rewards-canada.ts --geocode precise
+ * Kept under supabase/scripts for traceability. Not part of normal app workflows.
+ *
+ * Usage (from repo root):
+ *   npx tsx supabase/scripts/import-rewards-canada.ts --dry-run --limit 10
+ *   npx tsx supabase/scripts/import-rewards-canada.ts --geocode city
+ *   npx tsx supabase/scripts/import-rewards-canada.ts --geocode precise
  *
  * Requires .env.local with NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.
  */
@@ -12,16 +14,20 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
-import { getSupabaseSecretKey, getSupabaseUrl } from "../lib/supabase/env";
+import { getSupabaseSecretKey } from "../../lib/supabase/env";
 import {
   confidenceForImport,
   fetchRewardsCanadaData,
   parseRewardsCanadaRecord,
   REWARDS_CANADA_ATTRIBUTION,
   type RewardsCanadaRecord,
-} from "../lib/import/rewards-canada";
-import { flushGeocodeCache, geocodeMerchantLocation, preloadCityGeocodes } from "../lib/import/geocode";
-import { spreadCoordinates } from "../lib/map/spread-coordinates";
+} from "../../lib/import/rewards-canada";
+import {
+  flushGeocodeCache,
+  geocodeMerchantLocation,
+  preloadCityGeocodes,
+} from "../../lib/import/geocode";
+import { spreadCoordinates } from "../../lib/map/spread-coordinates";
 
 function loadEnv() {
   const envPath = path.join(process.cwd(), ".env.local");

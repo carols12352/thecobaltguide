@@ -13,9 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "import:rewards-canada": "tsx scripts/import-rewards-canada.ts",
-    "import:rewards-canada:dry": "tsx scripts/import-rewards-canada.ts --dry-run --limit 20",
-    "fix:imported-coordinates": "tsx scripts/fix-imported-coordinates.ts"
+    "import:rewards-canada": "tsx supabase/scripts/import-rewards-canada.ts",
+    "import:rewards-canada:dry": "tsx supabase/scripts/import-rewards-canada.ts --dry-run --limit 20"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
