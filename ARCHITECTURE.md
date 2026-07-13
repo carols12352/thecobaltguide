@@ -1,1328 +1,364 @@
-Cobalt 5x Merchant Map — System Architecture
+# Cobalt Merchant Map — Architecture and Feature Readiness
 
-1. Project Overview
+> Status: code-based assessment, verified 2026-07-13.
+>
+> Source of truth: application code and `supabase/migrations/`; this document records the current implementation and the gates for adding product scope.
 
-Cobalt 5x Merchant Map is a community-driven merchant multiplier discovery platform.
+## 1. Executive decision
 
-Users can:
+The application should remain a **modular monolith**:
 
-* View nearby merchants on a map
-* Check the recently reported multiplier for a specific merchant location
-* Submit the multiplier they actually received
-* View report volume, recency, and confidence level
-* Report incorrect locations or suspicious data
+- Next.js App Router serves pages and Route Handler APIs.
+- Server services coordinate business rules, caching, and repositories.
+- Supabase provides Auth, PostgreSQL, PostGIS, and Row Level Security (RLS).
+- Upstash Redis is optional and provides distributed cache and rate limiting when configured.
+- Geocoding is performed synchronously against Mapbox and Nominatim.
 
-The platform determines the most likely current multiplier for each merchant location based on the frequency and recency of community reports.
+There is no current code or operational evidence that justifies microservices, read replicas, a dedicated search service, vector tiles, Kubernetes, or a separately deployed API. Those are not roadmap commitments.
 
-The platform provides community-sourced reference data and does not guarantee how a card issuer will ultimately classify a transaction.
+The product is technically ready for small, isolated UI and read-only improvements. Before expanding write-heavy, privacy-sensitive, or operationally complex features, the P0 items in [Section 6](#6-feature-expansion-gates) should be completed.
 
-⸻
+### Current snapshot
 
-2. Product Goals
-
-Core Goals
-
-1. Help users quickly find nearby merchants that may earn 5x points
-2. Collect community reports through a low-friction submission flow
-3. Prioritize recent reports instead of lifetime totals
-4. Track data at the individual merchant-location level, not only by brand
-5. Keep the initial system simple while allowing future support for multiple credit cards
-
-Non-Goals
-
-The initial version does not include:
-
-* Statement screenshot uploads
-* OCR processing
-* Bank account connections
-* Automatic transaction imports
-* Complex redemption calculations
-* Gift card inventory tracking
-* Native mobile applications
-* Microservices
-
-⸻
-
-3. Recommended Technology Stack
-
-Layer	Technology
-Web framework	Next.js with TypeScript
-UI	Tailwind CSS and shadcn/ui
-Map rendering	MapLibre GL JS
-Map tiles	MapTiler, Mapbox, or another compatible provider
-Address search	Mapbox Geocoding, Google Places, or another geocoding provider
-Database	PostgreSQL
-Geospatial support	PostGIS
-Database hosting	Supabase
-Authentication	Supabase Auth
-Backend APIs	Next.js Route Handlers
-Server-side logic	Next.js Server Actions and server services
-Deployment	Vercel
-DNS and CDN	Cloudflare
-Error monitoring	Sentry
-Product analytics	PostHog or Vercel Analytics
-Rate limiting	Upstash Redis when needed
-Email	Resend when needed
-CI/CD	GitHub Actions and Vercel
-
-⸻
-
-4. High-Level Architecture
-
-┌───────────────────────────────────────────────┐
-│                 User Browser                  │
-│                                               │
-│  Map, search, place details, reports, account │
-└──────────────────────┬────────────────────────┘
-                       │ HTTPS
-                       ▼
-┌───────────────────────────────────────────────┐
-│             Cloudflare / Vercel CDN           │
-│                                               │
-│  Static assets, caching, TLS, basic protection│
-└──────────────────────┬────────────────────────┘
-                       ▼
-┌───────────────────────────────────────────────┐
-│                    Next.js                    │
-│                                               │
-│  Server Components                            │
-│  Client Components                            │
-│  Route Handlers                               │
-│  Server Actions                               │
-│  Admin dashboard                              │
-│  Authorization                               │
-│  Business services                            │
-└───────────────┬───────────────────┬───────────┘
-                │                   │
-                ▼                   ▼
-┌──────────────────────────┐  ┌──────────────────────┐
-│ Supabase                 │  │ Third-Party Map APIs │
-│                          │  │                      │
-│ PostgreSQL               │  │ Map tiles            │
-│ PostGIS                  │  │ Address search        │
-│ Auth                     │  │ Geocoding             │
-│ Row Level Security       │  └──────────────────────┘
-└───────────────┬──────────┘
-                │
-                ▼
-┌──────────────────────────┐
-│ Optional Infrastructure  │
-│                          │
-│ Redis cache              │
-│ Rate limiting            │
-│ Background jobs          │
-│ Sentry                   │
-│ PostHog                   │
-└──────────────────────────┘
-
-⸻
-
-5. System Modules
-
-5.1 Map Module
-
-Responsibilities:
-
-* Request the user’s approximate location
-* Display merchants inside the visible map area
-* Filter by multiplier, category, recency, and confidence
-* Load new data when the map moves
-* Display clusters at low zoom levels
-* Display individual merchant locations at high zoom levels
-
-The map API must only return locations inside the current viewport. It must not return every merchant in the database.
-
-Example request:
-
-GET /api/places/map
-  ?north=43.80
-  &south=43.60
-  &east=-79.20
-  &west=-79.60
-  &zoom=13
-  &multiplier=5
-  &category=grocery
-
-Example response:
-
-{
-  "places": [
-    {
-      "id": "place-id",
-      "name": "Example Market",
-      "latitude": 43.65,
-      "longitude": -79.38,
-      "multiplier": 5,
-      "confidenceLevel": "high",
-      "recentReportCount": 12,
-      "lastReportedAt": "2026-07-10"
-    }
-  ],
-  "truncated": false
-}
-
-The response should remain small and contain only the fields required by the map.
-
-⸻
-
-5.2 Place Module
-
-A place represents a specific physical merchant location, not an entire brand.
-
-Example:
-
-Brand: Metro
-Place: Metro — 123 Example Street, Toronto
-
-A place page should display:
-
-* Merchant name
-* Address
-* Merchant category
-* Whether American Express is accepted
-* Most likely current multiplier
-* Number of recent reports
-* Date of the latest report
-* Recent multiplier distribution
-* Historical changes
-* Report submission entry point
-* Incorrect-place reporting entry point
-
-⸻
-
-5.3 Multiplier Report Module
-
-The report form should remain simple.
-
-Required fields:
-
-Merchant location
-Actual multiplier: 1x / 2x / 3x / 5x
-Transaction date
-Purchase context: in-store / online / gas pump / delivery / other
-
-Optional fields:
-
-* Short note
-* Confirmation that the merchant accepts American Express
-
-The platform does not need:
-
-* Statement screenshots
-* Transaction amounts
-* Full statement descriptors
-* Credit card digits
-
-Submission flow:
-
-User submits a report
-        ↓
-Validate authentication and input
-        ↓
-Check duplicate submissions and rate limits
-        ↓
-Insert multiplier report
-        ↓
-Recalculate the location summary
-        ↓
-Update place multiplier summary
-        ↓
-Invalidate place and map-region caches
-
-⸻
-
-5.4 Community Aggregation Module
-
-The system should not use lifetime report totals.
-
-Merchant classification can change over time, so recent reports should have more influence than older reports.
-
-Recommended initial weighting:
-
-Report age	Weight
-0–30 days	1.00
-31–90 days	0.50
-91–180 days	0.20
-More than 180 days	Excluded from the current result
-
-Weighted multiplier score:
-
-Weighted score for a multiplier
-=
-sum of the recency weights of all valid reports for that multiplier
-
-Current multiplier:
-
-current_multiplier
-=
-multiplier with the highest weighted score
-
-Basic confidence:
-
-confidence
-=
-winning multiplier score
-/
-total score across all multipliers
-
-Example:
-
-5x weighted score: 8.5
-1x weighted score: 1.5
-Total score: 10
-Current multiplier: 5x
-Agreement: 85%
-
-The user interface does not have to expose an exact percentage. It can use confidence labels.
-
-Condition	Display
-Fewer than 2 reports	Insufficient data
-Agreement below 60%	Disputed
-Agreement between 60% and 80%	Medium confidence
-Agreement above 80% with at least 3 unique reporters	High confidence
-Multiple matching reports within 30 days	Recently confirmed
-
-⸻
-
-5.5 Administration Module
-
-The admin dashboard handles exceptions rather than manually reviewing every normal submission.
-
-Responsibilities:
-
-* View recent submissions
-* Remove or restore reports
-* Merge duplicate places
-* Edit place information
-* Mark locations as permanently closed
-* Review user-submitted flags **grouped by place** (resolve/dismiss all open flags on a place in one action; reputation once per reporter)
-* Suspend abusive accounts
-* Review unusually high submission activity
-* Review places with conflicting reports
-* Look up merchants by name, postal code, address, or place UUID from the Places tab
-* Edit a merchant in moderator view (`/admin/places/:id`): tiered geocode lookup (postal → address → name + city) with Mapbox Geocoding, Nominatim, and Mapbox Search Box; strict city filtering; multiple ranked matches; field backfill
-
-Report removal uses soft deletion (`status = removed`).
-
-⸻
-
-5.6 User and Permission Module
-
-Recommended login methods:
-
-* Google authentication
-* Email magic link
-* Anonymous browsing
-* Authentication required for submissions
-
-Roles:
-
-user
-moderator
-admin
-
-Permissions:
-
-Action	Guest	User	Moderator	Admin
-Browse map	Yes	Yes	Yes	Yes
-View places	Yes	Yes	Yes	Yes
-Submit multiplier	No	Yes	Yes	Yes
-Create place	No	Yes	Yes	Yes
-Flag content	No	Yes	Yes	Yes
-Remove suspicious reports	No	No	Yes	Yes
-Manage users	No	No	No	Yes
-Change system configuration	No	No	No	Yes
-
-⸻
-
-5.7 Account Module
-
-The account page shows a signed-in user’s recent contribution history and security settings.
-
-Responsibilities:
-
-* Display reputation score and contribution counts
-* List the user’s reports and flags from the last 30 days
-* Split reports into Active (live, unreviewed) and Archive (reviewed, flagged, or removed)
-* Split flags into Active (open) and Archive (resolved or dismissed)
-* Allow self-service removal of pending error/new-location reports only
-* Cache list responses per user in Redis (short TTL) and invalidate on report/flag mutations
-
-⸻
-
-6. Data Model
-
-6.1 profiles
-
-Stores application-level user information.
-
-profiles
-├── id
-├── username
-├── role
-├── reputation_score
-├── report_count
-├── status
-├── created_at
-└── updated_at
-
-Authentication credentials remain managed by Supabase Auth.
-
-Reputation rules (v1):
-
-* +1 when a user submits an auto-approved confirm or update report
-* +2 when staff approve an error report; −2 when staff remove it as invalid
-* +5 when staff accept a new location report; −3 when staff remove it as invalid
-* +2 when staff resolve a place flag; −2 when staff dismiss it as invalid (once per reporter per place review, even if they submitted multiple flags)
-* −2 when staff remove an active confirm or update report
-* −1 when the reporter deletes their own confirm or update report
-* Users with reputation below −10 cannot submit reports or flags
-* Admins may set `reputation_score` manually; moderators may not
-* `report_count` tracks submitted reports and decreases when users delete their own active reports
-
-Future phases may add tiers, badges, and privilege gates based on reputation. Complex reputation levels remain out of scope for the MVP.
-
-⸻
-
-6.2 merchant_brands
-
-Stores reusable brand information.
-
-merchant_brands
-├── id
-├── name
-├── normalized_name
-├── category
-├── website
-├── logo_url
-├── created_at
-└── updated_at
-
-A place does not need to belong to a brand. Independent merchants may have no brand_id.
-
-⸻
-
-6.3 places
-
-Stores individual physical merchant locations.
-
-places
-├── id
-├── brand_id
-├── name
-├── normalized_name
-├── address_line1
-├── city
-├── province
-├── postal_code
-├── country_code
-├── location
-├── category
-├── accepts_amex
-├── external_place_id
-├── status
-├── created_by
-├── created_at
-└── updated_at
-
-The location field should use:
-
-geography(Point, 4326)
-
-A PostGIS GiST index must be created for this field.
-
-⸻
-
-6.4 multiplier_reports
-
-Stores raw community reports.
-
-multiplier_reports
-├── id
-├── place_id
-├── user_id
-├── card_product_id
-├── multiplier
-├── transaction_date
-├── payment_context
-├── notes
-├── status
-├── moderation_reason
-├── created_at
-└── updated_at
-
-Possible statuses:
-
-active
-removed
-flagged
-
-⸻
-
-6.5 card_products
-
-Allows future support for multiple credit cards.
-
-card_products
-├── id
-├── issuer
-├── product_name
-├── slug
-├── country_code
-├── active
-├── created_at
-└── updated_at
-
-Initial record:
-
-issuer: American Express
-product_name: Cobalt Card
-slug: amex-cobalt-ca
-country_code: CA
-
-Even if the first version supports only Cobalt, reports and summaries should include a card_product_id.
-
-⸻
-
-6.6 place_multiplier_summaries
-
-Stores precomputed multiplier results for each place and card product.
-
-place_multiplier_summaries
-├── place_id
-├── card_product_id
-├── current_multiplier
-├── confidence_score
-├── confidence_level
-├── recent_report_count
-├── unique_reporter_count
-├── last_reported_at
-├── score_1x
-├── score_2x
-├── score_3x
-├── score_5x
-└── updated_at
-
-Map requests should read this table rather than aggregating raw reports on every request.
-
-⸻
-
-6.7 place_flags
-
-Stores community reports about incorrect place data.
-
-place_flags
-├── id
-├── place_id
-├── user_id
-├── reason
-├── details
-├── status
-├── resolved_by
-├── created_at
-└── resolved_at
-
-Possible reasons:
-
-duplicate
-wrong_address
-permanently_closed
-does_not_accept_amex
-incorrect_category
-other
-
-⸻
-
-6.8 moderation_logs
-
-Stores administrator and moderator actions.
-
-moderation_logs
-├── id
-├── moderator_id
-├── entity_type
-├── entity_id
-├── action
-├── reason
-├── metadata
-└── created_at
-
-⸻
-
-7. Data Relationships
-
-profiles
-   │
-   ├──── creates ──── places
-   │
-   ├──── submits ─── multiplier_reports
-   │
-   └──── creates ─── place_flags
-merchant_brands
-   │
-   └──── has many ── places
-places
-   │
-   ├──── has many ── multiplier_reports
-   ├──── has many ── place_flags
-   └──── has many ── place_multiplier_summaries
-card_products
-   │
-   ├──── has many ── multiplier_reports
-   └──── has many ── place_multiplier_summaries
-
-⸻
-
-8. API Design
-
-8.1 Public Endpoints
-
-GET /api/places/map
-GET /api/places/search
-GET /api/places/:id
-GET /api/places/:id/reports
-GET /api/cards
-
-`GET /api/places/:id/reports` returns grouped recent reports: `{ groups, totalReports }`. Groups combine active reports with the same multiplier and payment context; `reporterCount` is unique users, while `reportCount` is total submissions. Reputation and aggregation still operate on individual report rows.
-
-⸻
-
-8.2 Authenticated User Endpoints
-
-POST   /api/places
-POST   /api/places/:id/reports
-POST   /api/places/:id/flags
-GET    /api/me/reports
-DELETE /api/me/reports/:id
-GET    /api/me/flags
-
-Account list endpoints return only items from the last 30 days, support `view=active|archive` and pagination, and are cached per user in Redis with invalidation on submit/delete.
-
-Deleting a user’s own report should use soft deletion.
-
-⸻
-
-8.3 Administration Endpoints
-
-GET   /api/admin/reports
-PATCH /api/admin/reports/:id
-GET   /api/admin/flags          → `{ flagGroups }` (open flags merged by place)
-PATCH /api/admin/flags/:id      → resolves/dismisses all open flags for that flag's place
-PATCH /api/admin/places/:id/flags → bulk resolve/dismiss for a place
-GET   /api/admin/places
-PATCH /api/admin/places/:id
-POST  /api/admin/places/merge
-PATCH /api/admin/users/:id
-
-`GET /api/admin/places` requires at least one of `name`, `postalCode`, `addressLine1`, or `placeId` for search; multiple fields narrow results with AND logic.
-
-⸻
-
-9. Frontend Page Structure
-
-/
-├── Map
-├── Search
-├── Multiplier filters
-├── Category filters
-└── Nearby place list
-/place/[id]
-├── Place details
-├── Current multiplier
-├── Confidence level
-├── Recent multiplier distribution
-├── Report history
-└── Submit report
-/submit
-├── Search existing places
-├── Create new place
-└── Submit multiplier
-/account
-├── My reports (30-day window, active/archive)
-├── My flags (30-day window, active/archive)
-└── Account settings
-/admin
-├── Data overview
-├── Suspicious reports
-├── Place flags
-├── Places lookup (name/postal/address)
-├── Moderator place view (geocode + edit current place)
-├── Duplicate places
-└── User management
-
-⸻
-
-10. Recommended Code Structure
-
-src/
-├── app/
-│   ├── api/
-│   │   ├── places/
-│   │   ├── reports/
-│   │   ├── cards/
-│   │   └── admin/
-│   ├── place/
-│   ├── submit/
-│   ├── account/
-│   ├── admin/
-│   ├── layout.tsx
-│   └── page.tsx
-│
-├── components/
-│   ├── map/
-│   ├── places/
-│   ├── reports/
-│   ├── filters/
-│   ├── admin/
-│   └── ui/
-│
-├── server/
-│   ├── services/
-│   │   ├── place-service.ts
-│   │   ├── report-service.ts
-│   │   ├── summary-service.ts
-│   │   ├── moderation-service.ts
-│   │   └── geocoding-service.ts
-│   │
-│   ├── repositories/
-│   │   ├── place-repository.ts
-│   │   ├── report-repository.ts
-│   │   └── user-repository.ts
-│   │
-│   ├── policies/
-│   ├── validation/
-│   └── jobs/
-│
-├── lib/
-│   ├── supabase/
-│   ├── auth/
-│   ├── map/
-│   ├── rate-limit/
-│   └── monitoring/
-│
-├── types/
-└── config/
-
-Business logic should not be placed directly inside page components or Route Handlers.
-
-Recommended request flow:
-
-Route Handler
-      ↓
-Service
-      ↓
-Repository
-      ↓
-PostgreSQL
-
-This structure makes it easier to move the backend into a separate service later without rewriting the core business rules.
-
-⸻
-
-11. Place Creation and Duplicate Detection
-
-Place creation flow:
-
-User enters merchant name or address
-        ↓
-Search internal database first
-        ↓
-Call external address search if no result is found
-        ↓
-User confirms the exact location
-        ↓
-Backend performs duplicate detection
-        ↓
-Create the place
-        ↓
-User submits the first multiplier report
-
-Duplicate detection may use:
-
-* External provider place ID
-* Geographic distance
-* Normalized address
-* Normalized merchant name
-* Postal code
-* Brand ID
-
-Recommended rules:
-
-Same external_place_id
-→ treat as duplicate
-or
-Distance below 30 metres
-and normalized names are similar
-→ mark as a possible duplicate
-
-Do not detect duplicates based only on merchant name.
-
-⸻
-
-12. Abuse Prevention and Data Quality
-
-Baseline controls:
-
-1. Authentication is required for submissions
-2. A user may submit only once per place per day
-3. Each user has a daily submission limit
-4. New accounts have stricter submission limits
-5. Multiple accounts from the same IP may trigger rate limits
-6. Frequently flagged reports enter the moderation queue
-7. Removed reports do not affect aggregation
-8. Aggregation should count unique users, not raw request volume
-
-Recommended initial limits:
-
-Maximum 20 reports per user per day
-Minimum 60 seconds between report submissions from the same account
-Maximum 5 new places per user per day
-One report per user, place, and 24-hour period
-Maximum 50 write requests per IP per hour
-
-Database constraints must enforce important rules. Frontend validation alone is not sufficient.
-
-⸻
-
-13. Geospatial Queries
-
-The application has two main geospatial query patterns.
-
-Viewport Query
-
-Return places within the north, south, east, and west map bounds
-
-Used when the user moves or zooms the map.
-
-Nearby Query
-
-Return places within a specified radius of a coordinate
-
-Used for features such as “5x near me.”
-
-Requirements:
-
-* Use PostGIS
-* Add a GiST index to places.location
-* Limit the number of records returned
-* Use clustering at low zoom levels
-* Never return every merchant in the country in one request
-
-⸻
-
-14. Caching Strategy
-
-Phase One
-
-Use:
-
-* Vercel CDN
-* Next.js data caching
-* Browser caching
-* Debounced map requests
-
-Recommended cache durations:
-
-Content	Suggested cache duration
-Place details	5–15 minutes
-Map region data	1–5 minutes
-Brand and category lists	1 hour
-Personal user data	No shared cache
-Admin pages	No cache or very short cache
-
-Phase Two
-
-Add Redis for:
-
-* Map-region query caching
-* Popular place caching
-* API rate limiting
-* Duplicate request prevention
-* Background job locking
-
-Example cache keys:
-
-map:{zoom}:{tileX}:{tileY}:{card}:{multiplier}:{category}
-place:{placeId}:{cardProductId}
-
-When a report is submitted, invalidate only the affected place and nearby map-region caches.
-
-⸻
-
-15. Background Jobs
-
-The initial version may update place summaries synchronously.
-
-As report volume grows, summary calculation can move into a background job.
-
-User submits report
-        ↓
-Database write succeeds
-        ↓
-Create summary refresh job
-        ↓
-Worker recalculates the place summary
-        ↓
-Update summary table
-        ↓
-Invalidate cache
-
-Suitable background tasks include:
-
-* Recalculating place multipliers
-* Detecting duplicate places
-* Detecting suspicious user activity
-* Reapplying time decay to old reports
-* Sending moderator notifications
-* Refreshing external place metadata
-
-Possible tools:
-
-* Supabase Cron
-* Inngest
-* Trigger.dev
-* A separate Node.js worker
-
-⸻
-
-16. Security Design
-
-Server-Side Secrets
-
-The following values must remain server-side:
-
-* Supabase Service Role Key
-* Private map-provider credentials
-* Redis administrative credentials
-* Server-side Sentry credentials
-* Administrator authorization logic
-
-Database Security
-
-Enable Supabase Row Level Security.
-
-Core rules:
-
-* Public users may read public places and summaries
-* Authenticated users may create their own reports
-* Users may only edit or remove their own reports
-* Regular users may not directly update summary tables
-* Regular users may not modify other users’ profiles
-* Administrative actions must pass server-side authorization checks
-
-Input Validation
-
-All write endpoints should use a shared validation schema, such as Zod.
-
-Validate:
-
-* UUIDs
-* Allowed multiplier values
-* Date ranges
-* Coordinate ranges
-* Text lengths
-* Enum values
-* User permissions
-
-Frontend validation improves user experience, but server-side validation is mandatory.
-
-⸻
-
-17. Privacy Design
-
-The platform should not collect:
-
-* Credit card numbers
-* Card suffixes
-* Statement screenshots
-* Bank login credentials
-* Exact transaction amounts
-* Full statement descriptors
-
-The platform needs only:
-
-* User account identifier
-* Merchant location
-* Multiplier
-* Transaction date
-* Optional payment context
-
-Logs should not retain full IP addresses longer than necessary.
-
-Public pages should not reveal a reporter’s real name or email address.
-
-⸻
-
-18. Observability
-
-Monitor at least:
-
-* API error rate
-* Map query response time
-* Database query duration
-* Requests per minute
-* Report submission success rate
-* Summary refresh failures
-* Third-party map API failures
-* Daily new users
-* Daily submitted reports
-* Suspicious account activity
-
-Recommended tools:
-
-Sentry: errors and performance
-PostHog: product analytics
-Vercel Analytics: traffic and web performance
-Supabase Dashboard: database performance
-
-⸻
-
-19. Deployment Environments
-
-Recommended environments:
-
-Development
-Preview
-Production
-
-Development
-
-Local Next.js application
-Development Supabase project or local Supabase
-Test map API credentials
-
-Preview
-
-Each pull request should receive an isolated preview deployment.
-
-Vercel Preview
-Shared staging database
-Test OAuth callback URLs
-
-Production
-
-Vercel Production
-Supabase Production
-Cloudflare DNS
-Production map API credentials
-Sentry Production
-
-Development and preview environments should not use the production database.
-
-⸻
-
-20. CI/CD
-
-Recommended workflow:
-
-Pull Request
-      ↓
-Lint
-      ↓
-Type Check
-      ↓
-Unit Tests
-      ↓
-Build
-      ↓
-Vercel Preview Deployment
-      ↓
-Review and Merge
-      ↓
-Production Deployment
-
-Database migrations should live under:
-
-supabase/migrations/
-
-All database changes should be committed as migration files. Production database changes should not depend on undocumented manual edits.
-
-⸻
-
-21. Testing Strategy
-
-Unit Tests
-
-Test:
-
-* Time-decay calculations
-* Current multiplier selection
-* Confidence calculations
-* Rate-limit rules
-* Merchant-name normalization
-* Authorization policies
-
-Integration Tests
-
-Test:
-
-* Place creation
-* Report submission
-* Summary recalculation
-* Recalculation after report removal
-* Map-boundary queries
-* Row Level Security rules
-
-End-to-End Tests
-
-Test the main user journey:
-
-Sign in
-→ Search for a merchant
-→ View the place
-→ Submit a 5x report
-→ Confirm the new report appears
-
-⸻
-
-22. Scaling Roadmap
-
-Phase One: Single-City Validation
-
-Scope:
-
-* Toronto or the Greater Toronto Area
-* One card product: Amex Cobalt
-* Map browsing
-* Place search
-* Multiplier submission
-* Recency-weighted aggregation
-* Basic administration dashboard
-
-Architecture:
-
-Next.js + Supabase + PostGIS + Vercel
-
-⸻
-
-Phase Two: Major Canadian Cities
-
-Add:
-
-* Vancouver
-* Montreal
-* Calgary
-* Ottawa
-* Map clustering
-* Duplicate-place detection
-* Email notifications
-
-⸻
-
-Phase Three: Multiple Card Products
-
-Potential support:
-
-* American Express Cobalt
-* Scotiabank Gold American Express
-* Other points or cashback cards
-
-The database should not require a major redesign because reports and summaries already reference card_product_id.
-
-⸻
-
-Phase Four: High-Traffic Optimization
-
-Add when required:
-
-* PostgreSQL read replicas
-* Dedicated Redis
-* Background workers
-* Map vector tiles
-* CDN-cached map data
-* Database connection pooling
-* Dedicated search service
-* Separate backend API service
-
-Possible future architecture:
-
-Next.js Web
-    │
-    ▼
-API Service
-    ├── PostgreSQL Primary
-    ├── PostgreSQL Read Replicas
-    ├── Redis
-    ├── Worker Queue
-    └── Search Service
-
-Services should only be separated when real traffic, operational constraints, or costs justify the added complexity.
-
-⸻
-
-23. Performance Principles
-
-1. Load only the current map viewport
-2. Return minimal fields from map endpoints
-3. Precompute multiplier summaries
-4. Do not aggregate raw reports during every map request
-5. Use spatial indexes for all geospatial queries
-6. Paginate every list and enforce maximum result limits
-7. Debounce map movement requests by approximately 300–500 milliseconds
-8. Cache public and frequently accessed data at the CDN
-9. Never rely on client-side authorization for write operations
-10. Optimize database queries before introducing microservices
-
-⸻
-
-24. Key Architecture Decisions
-
-Why Use Next.js as a Full-Stack Framework
-
-* Frontend and backend can share TypeScript types
-* Fast initial development and deployment
-* Pages, APIs, and administration tools can live in one repository
-* Supports server rendering and search-engine optimization
-* The service layer can later move to a separate backend
-
-Why Use PostgreSQL
-
-* Users, places, brands, reports, and cards are relational
-* The platform requires transactions and constraints
-* The platform requires aggregation and reporting
-* PostGIS provides strong geospatial capabilities
-* PostgreSQL has a clear long-term scaling and migration path
-
-Why Not Use Firebase as the Primary Database
-
-* Complex geospatial queries are less flexible than PostGIS
-* Relational aggregation becomes more difficult
-* The data model has clear relationships between users, places, reports, cards, and summaries
-* Long-term query costs and access patterns may be harder to control
-
-Why Not Start with Microservices
-
-* Early traffic and team size do not justify the operational complexity
-* Microservices increase deployment, testing, monitoring, and debugging overhead
-* A well-structured monolith can support substantial usage
-* Clear service boundaries allow later extraction when necessary
-
-Why Not Require Screenshots
-
-* Lower submission friction
-* Lower privacy risk
-* Lower storage and moderation costs
-* Data quality can be maintained through recency weighting, unique-user counting, moderation, and rate limits
-
-⸻
-
-25. Recommended Initial Product Scope
-
-The first version should include:
-
-User authentication
-Merchant map
-Address and place search
-Place details
-Multiplier submission
-Recency-weighted aggregation
-New-place creation
-Incorrect-place reporting
-User report history
-Administrator report removal
-Place editing and merging
-Basic rate limiting
-Error monitoring
-
-The first version should not include:
-
-Screenshot uploads
-OCR
-Complex reputation levels
-Badges
-Comments
-Messaging
-Social networking
-Native mobile applications
-AI merchant recognition
-Gift card inventory
-Payments
-Microservices
-Kubernetes
-
-⸻
-
-26. Final Recommended Architecture
-
-Frontend
-Next.js + TypeScript + Tailwind CSS + MapLibre
-Backend
-Next.js Route Handlers
-Server Actions
-Service and repository layers
-Database
-Supabase PostgreSQL + PostGIS
-Authentication
-Supabase Auth
-Deployment
-Vercel + Cloudflare
-Monitoring
-Sentry + PostHog
-Scaling
-PostGIS indexes
-Precomputed summaries
-Map-region caching
-Redis
-Background workers
-Read replicas
-Vector tiles
-
-The architecture is designed to support both early product validation and significant future growth.
-
-The main principles are:
-
-Keep the initial system as a modular monolith
-Design the data model correctly from the beginning
-Read precomputed summaries instead of aggregating on every request
-Load data by map region
-Scale through caching and database improvements first
-Extract services only when real operational needs appear
-
-⸻
-
-27. Recent Delivery Summary (2026 Q2)
-
-Shipped since the initial MVP — condensed:
-
-| Area | What changed |
+| Measure | Current state |
 | --- | --- |
-| **Reputation** | Automatic score updates on report submit/delete, staff approval/removal, and flag resolve/dismiss. Floor at −10 blocks new reports and flags. Admins can override score on the Users tab. |
-| **Rate limits** | 60-second minimum between report submissions per account (in addition to daily and per-place limits). |
-| **Account** | `/account` lists reports and flags from the last 30 days with Active/Archive tabs; short-lived Redis cache per user; pending error/new-location reports can be withdrawn. |
-| **Place detail** | Recent reports returned and displayed as groups (multiplier + payment context); unique reporter count vs total submissions. |
-| **Admin flags** | `GET /api/admin/flags` returns `{ flagGroups }`. One resolve/dismiss clears all open flags on a place; reputation adjusted once per reporter per review. |
-| **Admin places** | Search by name, postal, address, or UUID; AND narrowing when multiple fields are set. |
-| **Geocoding** | Tiered lookup (postal → address → name + city); Mapbox + Nominatim + Search Box POI; city-name street noise filtered; strict municipality match (no cross-city metro bleed). |
-| **Caching** | User account list keys; admin flag cache; map version bump unchanged. |
+| TypeScript/TSX size | About 17.5k lines |
+| Server layer | About 3.9k lines |
+| Route Handlers | 25 |
+| Database | One Supabase PostgreSQL database with PostGIS |
+| Automated tests | 222 tests across 39 Vitest files |
+| CI | lint, typecheck, unit tests, production build |
+| Integration/E2E tests | Not present |
+| Production error monitoring | Not connected; the Sentry module is a stub |
 
-Implementation pattern throughout: pure helpers in `lib/`, orchestration in `server/services/`, thin route handlers, Vitest coverage on scoring/grouping/parsing rules.
+These numbers are a point-in-time aid, not architectural targets.
 
-⸻
+## 2. Current runtime architecture
 
-28. Near-Term Roadmap
+```text
+Browser
+  ├─ Next.js pages and client components
+  ├─ Supabase Auth client
+  └─ /api/* requests
+          │
+          ▼
+Next.js modular monolith
+  ├─ Route Handlers: auth, validation, HTTP responses
+  ├─ Services: orchestration, aggregation, moderation, caching
+  ├─ Repositories: Supabase queries and PostGIS RPC calls
+  └─ Geocoding adapters: Mapbox and Nominatim
+          │
+          ├──────────────► Upstash Redis (optional)
+          │                 cache and distributed rate limits
+          ▼
+Supabase
+  ├─ Auth
+  ├─ PostgreSQL + PostGIS
+  └─ RLS
+```
 
-**Next (quality and ops)**
+The deployment target documented by the project is Vercel or another Node.js 22+ host. Cloudflare, PostHog, Resend, background workers, and Sentry are either optional configuration or unimplemented; they are not part of the guaranteed current architecture.
 
-* Deduplicate geocode results that share coordinates (e.g. Search Box + Nominatim for the same storefront).
-* Email or in-app notifications when staff action a user's report or flag.
-* Expand E2E coverage for submit → moderate → reputation flows.
-* Wire Sentry (replace `lib/monitoring/sentry.ts` stub) and basic PostHog funnels.
+### Request layering
 
-**Medium term (product)**
+The dominant path is:
 
-* Duplicate-place suggestions surfaced to moderators (PostGIS distance + normalized name).
-* Background summary refresh when report volume grows.
-* Optional second card product (schema already supports `card_product_id`).
-* Broader city rollout beyond initial seed data.
+```text
+app/api/*/route.ts
+        → server/services/*
+        → server/repositories/*
+        → Supabase
+```
 
-**Later (scale — only when traffic warrants)**
+This boundary is useful but not yet strict. `summary-service.ts` and parts of `moderation-service.ts` use the admin Supabase client directly. That is manageable in a single service, but new database access should normally be placed in a repository or a transactional database RPC.
 
-* Read replicas and connection pooling.
-* Dedicated search index if Postgres text search becomes a bottleneck.
-* Extract geocoding or moderation into a worker only if API latency or provider rate limits require it.
+## 3. Implemented product modules
 
-**Explicit non-goals for the next phase**
+| Module | Implemented behavior | Primary code |
+| --- | --- | --- |
+| Map discovery | Viewport grid loading, wider-view clustering data, exact viewport count/list supplement, filters, distance sorting | `components/map/merchant-map.tsx`, `place-service.ts`, PostGIS RPC migrations |
+| Places | Search, detail, duplicate detection, authenticated creation | `place-service.ts`, `place-repository.ts` |
+| Reports | 1x/2x/3x/5x submissions, report classification, recency aggregation, grouped public history, limited self-removal | `report-service.ts`, `summary-service.ts`, `aggregation.ts` |
+| Flags and moderation | Place flags, grouped review, report approval/removal, place editing/merging, user administration, audit rows | `moderation-service.ts`, `flag-repository.ts`, admin routes |
+| Reputation | Score changes for submissions and moderation outcomes; low-score submission block | `reputation-service.ts`, `lib/reputation/scoring.ts` |
+| Accounts and auth | Supabase email/password, magic link, Google, account history, roles and suspension | `lib/auth/*`, account routes and components |
+| Geocoding | Structured and reverse lookup using Mapbox and Nominatim; result ranking and city filtering | `geocoding-service.ts`, `lib/geocoding/*` |
+| Cache and limits | CDN headers, Redis read/write caches, version-based invalidation, Redis/in-memory rate limits | `lib/cache/*`, `lib/rate-limit/*` |
 
-* Screenshots/OCR, microservices, native apps, gift-card inventory, payments.
+The system supports one active product experience, Amex Cobalt, although reports and summaries already carry `card_product_id`.
 
-The architecture remains a **modular monolith**: add capabilities behind services and cache boundaries first; split processes only when measured cost or reliability demands it.
+## 4. Data, API, and consistency model
+
+### Core tables
+
+The migration history currently defines:
+
+- `profiles`: application role, status, reputation, and report count.
+- `merchant_brands`: optional shared brand metadata.
+- `card_products`: card identity; seeded with `amex-cobalt-ca`.
+- `places`: one physical merchant location with a PostGIS geography point.
+- `multiplier_reports`: raw community reports and moderation state.
+- `place_multiplier_summaries`: precomputed result per place/card.
+- `place_flags`: community corrections and review state.
+- `moderation_logs`: staff action audit rows.
+- `lookup_auth_account_hints(text)`: service-role-only database function used by sign-in flows.
+
+`supabase/migrations/` is authoritative for schema and RLS. TypeScript domain types are application projections and must be updated with migrations.
+
+### API groups
+
+| Access | Routes |
+| --- | --- |
+| Public reads | cards, place detail/reports/search/map/viewport, geocode/reverse geocode |
+| Authenticated user | create place, submit/delete own report, submit flag, account report/flag lists |
+| Moderator | report and flag queues/actions, place lookup/edit/merge |
+| Administrator | user lookup and role/status/reputation changes |
+
+Authorization is checked in Route Handlers with `requireAuth`, `requireModerator`, or `requireAdmin`. Validation uses Zod schemas before service calls.
+
+### Map read path
+
+1. `/api/places/map` aligns and pads the viewport into a cache grid.
+2. Redis is checked when configured.
+3. A bounded PostGIS RPC returns at most 200 neighbourhood places or 500 wider-view cluster points.
+4. `/api/places/viewport` optionally obtains an exact count and bounded distance-sorted list.
+5. Public responses use short CDN caching; Redis data uses longer TTLs.
+6. Mutations bump cache versions and invalidate affected detail/admin/account entries.
+
+This is already an appropriate scale-first design. Query plans, cache hit rates, and production latency should be measured before changing the topology.
+
+### Report write path
+
+The current report flow is synchronous:
+
+```text
+authenticate and rate-limit
+  → classify report
+  → insert report
+  → update report count/reputation
+  → recompute summary
+  → invalidate public, account, and admin caches
+```
+
+Deletion and moderation use similar multi-step flows. These operations are **not one database transaction**. A later step can fail after an earlier write has committed, leaving counters, summaries, review state, or audit data inconsistent. Place merging also performs multiple independent writes.
+
+Cache invalidation may remain best-effort after commit, but authoritative database changes that form one business action should become atomic.
+
+## 5. What is already strong
+
+- The route/service/repository shape keeps most HTTP and business concerns separate.
+- PostGIS indexes and bounded viewport RPCs match the map access pattern.
+- Precomputed summaries prevent aggregation on every read.
+- Redis is optional, so cache failure does not make the application unusable.
+- Important domain rules are represented in shared TypeScript and Zod definitions.
+- The database enforces one active report per user/place/UTC day and basic field constraints.
+- CI runs lint, TypeScript, Vitest, and `next build` on pushes and pull requests.
+- Pure aggregation, geocoding parsing, map behavior, cache coordination, reputation, and validation helpers have useful unit coverage.
+
+This foundation is sufficient for continued development inside the monolith.
+
+## 6. Feature expansion gates
+
+### P0 — complete before expanding production write scope
+
+#### 6.1 Lock down RLS and direct database access
+
+The initial migration currently permits a signed-in user to update their own `profiles` row without limiting writable columns. Based on the migration alone, a client could attempt to change protected fields such as `role`, `status`, `reputation_score`, or `report_count` directly through Supabase. This must be fixed and verified against the deployed database.
+
+The database also permits authenticated clients to insert places, reports, and flags directly. Direct Supabase requests can therefore bypass Route Handler checks for:
+
+- per-user daily limits and cooldowns;
+- IP rate limits;
+- reputation-based blocking;
+- service-controlled report classification;
+- cache invalidation and summary refresh.
+
+Active raw reports and profiles are broadly selectable through RLS, even though the application UI exposes grouped report data. That can reveal identifiers, notes, and profile fields beyond the intended public API.
+
+Required outcome:
+
+1. Add a migration that uses least-privilege grants and policies.
+2. Restrict profile self-update to explicitly safe columns, or route it through a controlled RPC/API.
+3. Remove direct client writes that must obey application business rules, or replace them with database RPCs that enforce the same rules atomically.
+4. Expose only intentional public report/profile fields, preferably through API projections or restricted views.
+5. Add automated RLS tests for anonymous, user, moderator, and admin roles.
+
+This is the highest-priority prerequisite for new features.
+
+#### 6.2 Make authoritative multi-table actions atomic
+
+Move these workflows into transactional PostgreSQL functions or otherwise guarantee atomicity and idempotency:
+
+- submit/delete report plus profile counter/reputation changes;
+- approve/remove/flag report plus reputation and review metadata;
+- resolve a place's flags plus reporter reputation and report cleanup;
+- merge places plus report/flag reassignment, source status, summary, and audit log.
+
+Summary refresh can be included in the transaction at current volume. If it later becomes asynchronous, use a durable outbox/job record rather than an untracked fire-and-forget call.
+
+#### 6.3 Connect real production observability
+
+`lib/monitoring/sentry.ts` currently logs only in development and contains commented Sentry calls. Before increasing product scope, production must provide at least:
+
+- captured server exceptions with route and operation context;
+- API error rate and p95 latency;
+- map/PostGIS query duration and Redis hit/miss rate;
+- geocoding provider failures, timeouts, and usage;
+- report/flag mutation success and summary-refresh failures.
+
+No analytics vendor is mandatory. The requirement is actionable signals and alerts, not a specific tool.
+
+### P1 — strengthen before medium-complexity features
+
+#### 6.4 Add integration and critical-path E2E coverage
+
+The current 222 tests are primarily unit tests with mocked repositories and caches. Add a local/test Supabase suite that applies migrations and verifies:
+
+- RLS and grants for every role;
+- report submission, classification, aggregation, deletion, and moderation;
+- duplicate-place prevention and place merge rollback behavior;
+- PostGIS viewport boundaries and pagination;
+- cache invalidation after committed mutations.
+
+Add a small Playwright suite for sign-in → submit → moderate → account-history. Broad browser coverage is unnecessary; protect the highest-risk journeys.
+
+#### 6.5 Protect third-party provider paths
+
+The geocode and reverse-geocode endpoints are public and currently have no route-level rate limit. Provider fetches do not have an explicit timeout/cancellation policy. Before adding more address-dependent features:
+
+- require an appropriate session where possible;
+- add IP/user quotas and short result caching;
+- add timeouts, bounded retries, and provider-specific error metrics;
+- define a graceful fallback when one or both providers fail.
+
+This controls latency, abuse, and Mapbox cost exposure.
+
+#### 6.6 Reduce internal hotspots without changing deployment topology
+
+Refactor when touching these areas:
+
+- split `geocoding-service.ts` by provider, orchestration, and ranking responsibility;
+- split `place-repository.ts` into public-map reads, admin reads, and writes;
+- move direct database access out of `moderation-service.ts` and `summary-service.ts`;
+- introduce typed repository results instead of loose `Record<string, unknown>` updates;
+- preserve one directional dependency: route → service → repository/database.
+
+This is modular-monolith cleanup, not a reason to create network services.
+
+### P2 — triggered by a specific feature or measured load
+
+Implement these only when a selected feature requires them:
+
+| Proposed capability | Required foundation |
+| --- | --- |
+| Notifications/email | Durable outbox, retry/idempotency, delivery preferences, unsubscribe/privacy rules |
+| Bulk imports | Job table or worker, idempotent import keys, checkpoints, failure report, provider quotas |
+| Second card product | Product-aware UI/API/cache keys, per-card test fixtures, migration and aggregation verification |
+| Screenshot/OCR | Private object storage, malware/file validation, retention/deletion policy, async processing, moderation cost model |
+| Comments/social features | Abuse tooling, deletion/export policy, notification controls, moderation capacity |
+| Public API or mobile client | Versioned API contract, token scopes, quotas, CORS policy, deprecation policy |
+| High-volume summary refresh | Durable queue/outbox and idempotent worker |
+| Dedicated search | Measured evidence that indexed PostgreSQL search cannot meet the latency/quality target |
+
+## 7. Feature readiness assessment
+
+| Feature class | Readiness | Decision |
+| --- | --- | --- |
+| UI polish and local presentation changes | Ready | Can proceed with existing tests and visual verification |
+| New bounded public read/filter | Mostly ready | Add query/index and response-contract tests; measure payload and latency |
+| New authenticated mutation | Not ready | Complete RLS and transactional P0 work first |
+| More moderation workflows | Not ready | First make existing moderation actions atomic and integration-tested |
+| More geocoding-dependent behavior | Not ready | Add endpoint protection, timeouts, cache, and provider monitoring |
+| Second card product | Partially ready | Schema supports it; product behavior, cache isolation, and fixtures do not yet prove it |
+| Notifications or scheduled processing | Foundation missing | Add outbox/worker only for the selected feature |
+| Uploads, OCR, social, payments | Out of current scope | Require separate product, privacy, abuse, and cost justification |
+| Microservices | Not justified | Reassess only from measured scaling/team/reliability constraints |
+
+### Definition of ready for a new feature
+
+A feature may enter implementation when:
+
+- its data owner and authorization rules are explicit;
+- direct Supabase access cannot bypass its rules;
+- multi-table writes have a transaction/idempotency design;
+- migration, rollback/repair, and backfill behavior are defined;
+- public/private response fields and retention are documented;
+- expected query volume, indexes, limits, and cache behavior are known;
+- unit plus required integration/E2E tests are identified;
+- failures are observable and have a safe user-facing outcome;
+- ongoing moderation or provider cost has an owner.
+
+Small read-only work does not need heavyweight design. The checklist scales with risk.
+
+## 8. Recommended near-term architecture work
+
+### Stage A — release safety
+
+1. Audit the deployed Supabase grants/RLS and add corrective migrations.
+2. Add automated RLS tests before relying on application roles.
+3. Convert report and moderation write workflows to transactional database operations.
+4. Wire production exception reporting and basic latency/failure dashboards.
+5. Rate-limit and time-bound geocoding calls.
+
+### Stage B — maintainability
+
+1. Add Supabase integration tests and a minimal critical-path E2E suite.
+2. Split oversized geocoding and place persistence modules along existing responsibilities.
+3. Standardize mutation errors, conflict responses, and idempotency behavior.
+4. Record query and cache baselines so future scaling decisions use evidence.
+
+### Stage C — product work
+
+Choose one feature, apply the readiness checklist, and add only the infrastructure it requires. Do not pre-build a generic queue, service mesh, search cluster, or multi-card abstraction without a selected use case.
+
+## 9. Scaling and service extraction criteria
+
+Continue scaling the monolith through bounded queries, indexes, caching, and horizontal Next.js instances. Consider a worker or service boundary only when production evidence shows one of the following:
+
+- a task exceeds request-duration limits or needs durable retries;
+- one workload requires materially different compute or scaling;
+- provider rate limits require centralized scheduling;
+- separate teams need independent ownership and release cadence;
+- a security/compliance boundary requires isolated credentials or data;
+- a measured database/search bottleneck cannot be solved reasonably in PostgreSQL.
+
+The first likely extraction, if ever needed, is an asynchronous import/notification worker—not separate place, report, user, and moderation microservices. Those domains share transactions and one relational model.
+
+## 10. Explicitly removed assumptions
+
+The previous document mixed implemented behavior with speculative recommendations. This revision removes or demotes the following because the code does not establish them as current architecture or committed plans:
+
+- fixed city-by-city rollout phases;
+- assumed Cloudflare, PostHog, Resend, Sentry, preview-environment, and staging-database deployments;
+- generic background-job, read-replica, vector-tile, and dedicated-search roadmaps;
+- a future separate backend presented as an expected destination;
+- comparison with unused database products;
+- repeated MVP and non-goal lists;
+- a hypothetical `src/`, `policies/`, and `jobs/` tree that does not match the repository;
+- suggested cache durations and debounce values that differ from `config/constants.ts`;
+- completed feature descriptions written as future requirements.
+
+Future architecture changes should be added only when supported by code, an accepted feature design, or measured production evidence.
+
+## 11. Architecture principles
+
+1. Code and migrations outrank this document.
+2. Keep one deployable application while the domain and team remain cohesive.
+3. Enforce authorization and invariants at the database boundary, not only in UI or routes.
+4. Keep authoritative writes atomic; make asynchronous work durable and idempotent.
+5. Return bounded, intentional projections instead of raw database rows.
+6. Optimize measured database and cache behavior before changing topology.
+7. Add infrastructure for an approved feature, not for a hypothetical future.
+8. Treat privacy, abuse handling, observability, and operational ownership as feature requirements.
+
+## 12. Verification baseline
+
+At the time of this assessment:
+
+```text
+npm test          39 files, 222 tests passed
+npm run typecheck passed
+npm run lint      passed
+```
+
+These checks validate the current TypeScript and unit-test baseline. They do not validate deployed RLS, real Supabase transactions, external providers, browser journeys, or production operations; the readiness plan above closes those gaps.
