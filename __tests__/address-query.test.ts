@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAddressGeocodeQueries,
   buildGeocodeQueries,
+  buildPostalGeocodeQueries,
+  looksLikeStreetAddress,
   mergeSplitStreetName,
   normalizeAddressLine,
 } from "@/lib/geocoding/address-query";
@@ -23,20 +26,59 @@ describe("mergeSplitStreetName", () => {
   });
 });
 
+describe("looksLikeStreetAddress", () => {
+  it("treats numbered streets as addresses", () => {
+    expect(looksLikeStreetAddress("665 King St W")).toBe(true);
+  });
+
+  it("treats merchant names as non-address lines", () => {
+    expect(looksLikeStreetAddress("The Lancaster Smokehouse")).toBe(false);
+  });
+});
+
+describe("buildAddressGeocodeQueries", () => {
+  it("skips business-name lines", () => {
+    expect(
+      buildAddressGeocodeQueries({
+        addressLine1: "The Lancaster Smokehouse",
+        city: "Kitchener",
+        province: "ON",
+        postalCode: "N2K 1M3",
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("buildPostalGeocodeQueries", () => {
+  it("builds postal-first fallback queries", () => {
+    expect(
+      buildPostalGeocodeQueries({
+        city: "Kitchener",
+        province: "ON",
+        postalCode: "N2K 1M3",
+      }),
+    ).toEqual(["N2K 1M3, Kitchener, ON, Canada", "N2K 1M3, Canada"]);
+  });
+
+  it("builds postal-only queries when city and province are missing", () => {
+    expect(
+      buildPostalGeocodeQueries({
+        postalCode: "N2K 1M3",
+      }),
+    ).toEqual(["N2K 1M3, Canada"]);
+  });
+});
+
 describe("buildGeocodeQueries", () => {
-  it("includes progressive fallbacks for typo-prone addresses", () => {
+  it("prioritizes street address before postal fallback", () => {
     const queries = buildGeocodeQueries({
-      name: "Walmart Supercenter",
-      addressLine1: "70 Bridge Port E",
-      city: "Waterloo",
+      addressLine1: "665 King St W",
+      city: "Kitchener",
       province: "ON",
-      postalCode: "N2L 0J9",
+      postalCode: "N2K 1M3",
     });
 
-    expect(queries[0]).toBe(
-      "Walmart Supercenter, 70 Bridge Port E, Waterloo, ON, N2L 0J9, Canada",
-    );
-    expect(queries).toContain("70 bridgeport East, Waterloo, ON, Canada");
-    expect(queries.indexOf("70 bridgeport East, Waterloo, ON, Canada")).toBeGreaterThan(0);
+    expect(queries[0]).toBe("665 King St W, N2K 1M3, Kitchener, ON, Canada");
+    expect(queries).toContain("N2K 1M3, Kitchener, ON, Canada");
   });
 });

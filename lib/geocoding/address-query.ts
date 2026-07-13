@@ -78,10 +78,10 @@ const ABBREVIATIONS: Record<string, string> = {
 
 export type StructuredAddressInput = {
   name?: string;
-  addressLine1: string;
-  city: string;
-  province: string;
-  postalCode: string;
+  addressLine1?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
 };
 
 function isStreetSuffix(token: string): boolean {
@@ -134,29 +134,108 @@ function buildQuery(parts: Array<string | undefined>): string {
   return parts.filter((part) => part && part.trim()).join(", ");
 }
 
-/** Ordered geocoding queries from most specific to most tolerant. */
-export function buildGeocodeQueries(input: StructuredAddressInput): string[] {
-  const city = input.city.trim();
-  const province = input.province.trim();
-  const postalCode = input.postalCode.trim();
-  const name = input.name?.trim();
-  const addressVariants = [
-    input.addressLine1.trim(),
-    normalizeAddressLine(input.addressLine1),
-    mergeSplitStreetName(input.addressLine1),
-    mergeSplitStreetName(normalizeAddressLine(input.addressLine1)),
-  ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
+function uniqueQueries(queries: string[]): string[] {
+  return queries.filter((query, index) => queries.indexOf(query) === index);
+}
 
+function addressVariants(addressLine1?: string): string[] {
+  if (!addressLine1?.trim()) return [];
+
+  return [
+    addressLine1.trim(),
+    normalizeAddressLine(addressLine1),
+    mergeSplitStreetName(addressLine1),
+    mergeSplitStreetName(normalizeAddressLine(addressLine1)),
+  ].filter(
+    (value, index, all): value is string =>
+      Boolean(value) && all.indexOf(value) === index,
+  );
+}
+
+/** True when the line looks like a street address rather than a business name. */
+export function looksLikeStreetAddress(addressLine1: string): boolean {
+  const trimmed = addressLine1.trim();
+  if (!trimmed) return false;
+  if (/^\d+\s/.test(trimmed)) return true;
+
+  const tokens = trimmed.toLowerCase().split(/\s+/);
+  return tokens.some((token) => isStreetSuffix(token));
+}
+
+/** Street-address queries — skipped when the line is a business name. */
+export function buildAddressGeocodeQueries(
+  input: StructuredAddressInput,
+): string[] {
+  if (!looksLikeStreetAddress(input.addressLine1 ?? "")) return [];
+
+  const city = input.city?.trim() ?? "";
+  const province = input.province?.trim() ?? "";
+  const postalCode = input.postalCode?.trim() || "";
+  const variants = addressVariants(input.addressLine1);
   const queries: string[] = [];
 
-  for (const addressLine1 of addressVariants) {
+  for (const addressLine1 of variants) {
+    if (postalCode) {
+      queries.push(
+        buildQuery([addressLine1, postalCode, city, province, "Canada"]),
+        buildQuery([addressLine1, postalCode, "Canada"]),
+      );
+    }
+    queries.push(buildQuery([addressLine1, city, province, "Canada"]));
+  }
+
+  return uniqueQueries(queries);
+}
+
+/** Postal-code queries — fallback when address lookup fails or is unavailable. */
+export function buildPostalGeocodeQueries(
+  input: StructuredAddressInput,
+): string[] {
+  const city = input.city?.trim() ?? "";
+  const province = input.province?.trim() ?? "";
+  const postalCode = input.postalCode?.trim() || "";
+  if (!postalCode) return [];
+
+  return uniqueQueries([
+    buildQuery([postalCode, city, province, "Canada"]),
+    buildQuery([postalCode, "Canada"]),
+  ]);
+}
+
+/** Address search biased toward a postal-code centroid. */
+export function buildPostalStreetSearchQuery(
+  input: StructuredAddressInput,
+): string | null {
+  const postalCode = input.postalCode?.trim();
+  if (!postalCode) return null;
+
+  return buildQuery([
+    postalCode,
+    input.city?.trim(),
+    input.province?.trim(),
+    "Canada",
+  ]);
+}
+
+/** All queries in priority order. */
+export function buildGeocodeQueries(input: StructuredAddressInput): string[] {
+  const name = input.name?.trim();
+  const queries = [
+    ...buildAddressGeocodeQueries(input),
+    ...buildPostalGeocodeQueries(input),
+  ];
+
+  if (name && input.postalCode?.trim()) {
     queries.push(
-      buildQuery([name, addressLine1, city, province, postalCode, "Canada"]),
-      buildQuery([addressLine1, city, province, postalCode, "Canada"]),
-      buildQuery([name, addressLine1, city, province, "Canada"]),
-      buildQuery([addressLine1, city, province, "Canada"]),
+      buildQuery([
+        name,
+        input.postalCode.trim(),
+        input.city?.trim(),
+        input.province?.trim(),
+        "Canada",
+      ]),
     );
   }
 
-  return queries.filter((query, index) => queries.indexOf(query) === index);
+  return uniqueQueries(queries);
 }

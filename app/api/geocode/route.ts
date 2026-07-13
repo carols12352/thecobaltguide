@@ -18,9 +18,11 @@ export async function GET(request: Request) {
       return jsonValidationError(parsed.error.flatten());
     }
 
-    const results = await geocodingService.geocodeStructuredAddress(parsed.data);
+    const { results, source } = await geocodingService.geocodeStructuredAddress(
+      parsed.data,
+    );
 
-    return jsonOk({ results });
+    return jsonOk({ results, source });
   } catch (error) {
     captureException(error, { route: "GET /api/geocode" });
     return jsonError("Geocoding failed", 500);

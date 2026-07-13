@@ -105,7 +105,7 @@ export function LocationPicker({
       <p className="text-xs text-zinc-500">
         {readOnly
           ? "Exact map pin location (moderator view)."
-          : "Drag the pin if the location needs adjustment."}
+          : "Drag the pin to adjust location. Address and postal code update automatically."}
       </p>
     </div>
   );

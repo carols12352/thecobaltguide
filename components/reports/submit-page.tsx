@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,16 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { MERCHANT_CATEGORIES } from "@/config/categories";
 import {
-  CANADIAN_POSTAL_CODE_MESSAGE,
   formatCanadianPostalCodeInput,
 } from "@/lib/validation/canadian-postal-code";
+import {
+  fetchGeocodeLookup,
+  fetchReverseGeocode,
+  geocodeParamsFromForm,
+  mergeGeocodeIntoAddressFields,
+  mergeReverseGeocodeIntoAddressFields,
+  resolveGeocodeAddressLine1,
+} from "@/lib/geocoding/client";
 import {
   createPlaceSchema,
   geocodeQuerySchema,
@@ -48,7 +55,9 @@ export function SubmitReportPage() {
   } | null>(null);
   const [geocodeResults, setGeocodeResults] = useState<GeocodingResult[]>([]);
   const [geocodeLoading, setGeocodeLoading] = useState(false);
+  const [pinGeocodeLoading, setPinGeocodeLoading] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
+  const pinGeocodeRequestRef = useRef(0);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
   const [createdPlaceId, setCreatedPlaceId] = useState<string | null>(null);
@@ -59,36 +68,28 @@ export function SubmitReportPage() {
     setGeocodeResults([]);
     setCoordinates(null);
 
-    const parsed = geocodeQuerySchema.safeParse(newPlace);
+    const lookupInput = geocodeParamsFromForm(newPlace);
+    const parsed = geocodeQuerySchema.safeParse(lookupInput);
     if (!parsed.success) {
       const postalError = parsed.error.flatten().fieldErrors.postalCode?.[0];
-      setGeocodeError(postalError ?? "Fill in all required address fields.");
+      setGeocodeError(postalError ?? "Enter a valid postal code.");
       return;
     }
 
     setGeocodeLoading(true);
 
     try {
-      const params = new URLSearchParams({
-        addressLine1: parsed.data.addressLine1,
-        city: parsed.data.city,
-        province: parsed.data.province,
-        postalCode: parsed.data.postalCode,
-      });
-      if (parsed.data.name) params.set("name", parsed.data.name);
-
-      const res = await fetch(`/api/geocode?${params}`);
-      if (!res.ok) throw new Error("Geocoding failed");
-
-      const data = await res.json();
-      const results = (data.results ?? []) as GeocodingResult[];
+      const { results, source } = await fetchGeocodeLookup(parsed.data);
       if (results.length === 0) {
-        setGeocodeError("No location found for this address. Check the details and try again.");
+        setGeocodeError("No location found for this address. Check the postal code and try again.");
         return;
       }
 
-      setGeocodeResults(results);
-      applyGeocodeResult(results[0]);
+      setGeocodeResults(results.length > 1 ? results : []);
+      applyGeocodeResult(results[0]!);
+      if (source === "postal") {
+        setGeocodeError(null);
+      }
     } catch {
       setGeocodeError("Could not look up this address. Please try again.");
     } finally {
@@ -101,13 +102,70 @@ export function SubmitReportPage() {
       latitude: result.latitude,
       longitude: result.longitude,
     });
-    setNewPlace((current) => ({
-      ...current,
-      addressLine1: result.addressLine1 || current.addressLine1,
-      city: result.city || current.city,
-      province: result.province || current.province,
-      postalCode: result.postalCode || current.postalCode,
-    }));
+    setNewPlace((current) => {
+      const merged = mergeGeocodeIntoAddressFields(
+        {
+          addressLine1: current.addressLine1,
+          city: current.city,
+          province: current.province,
+          postalCode: current.postalCode,
+          latitude: result.latitude,
+          longitude: result.longitude,
+        },
+        result,
+      );
+      return {
+        ...current,
+        addressLine1: merged.addressLine1,
+        city: merged.city,
+        province: merged.province,
+        postalCode: merged.postalCode,
+      };
+    });
+  }
+
+  async function handlePinChange(latitude: number, longitude: number) {
+    const requestId = ++pinGeocodeRequestRef.current;
+
+    setCoordinates({ latitude, longitude });
+    setPinGeocodeLoading(true);
+    setGeocodeError(null);
+
+    try {
+      const results = await fetchReverseGeocode(latitude, longitude);
+      if (requestId !== pinGeocodeRequestRef.current) return;
+
+      if (results.length === 0) return;
+
+      const result = results[0]!;
+      setCoordinates({ latitude, longitude });
+      setNewPlace((current) => {
+        const merged = mergeReverseGeocodeIntoAddressFields(
+          {
+            addressLine1: current.addressLine1,
+            city: current.city,
+            province: current.province,
+            postalCode: current.postalCode,
+            latitude,
+            longitude,
+          },
+          result,
+        );
+        return {
+          ...current,
+          addressLine1: merged.addressLine1,
+          city: merged.city,
+          province: merged.province,
+          postalCode: merged.postalCode,
+        };
+      });
+    } catch {
+      // Coordinates still updated; address fields unchanged.
+    } finally {
+      if (requestId === pinGeocodeRequestRef.current) {
+        setPinGeocodeLoading(false);
+      }
+    }
   }
 
   async function handleCreatePlace(e: React.FormEvent) {
@@ -193,9 +251,7 @@ export function SubmitReportPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="place-address">
-                Address <RequiredMark />
-              </Label>
+              <Label htmlFor="place-address">Address</Label>
               <Input
                 id="place-address"
                 placeholder="Street address"
@@ -203,14 +259,11 @@ export function SubmitReportPage() {
                 onChange={(e) =>
                   setNewPlace({ ...newPlace, addressLine1: e.target.value })
                 }
-                required
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label htmlFor="place-city">
-                  City <RequiredMark />
-                </Label>
+                <Label htmlFor="place-city">City</Label>
                 <Input
                   id="place-city"
                   placeholder="City"
@@ -218,13 +271,10 @@ export function SubmitReportPage() {
                   onChange={(e) =>
                     setNewPlace({ ...newPlace, city: e.target.value })
                   }
-                  required
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="place-province">
-                  Province <RequiredMark />
-                </Label>
+                <Label htmlFor="place-province">Province</Label>
                 <Input
                   id="place-province"
                   placeholder="ON"
@@ -232,7 +282,6 @@ export function SubmitReportPage() {
                   onChange={(e) =>
                     setNewPlace({ ...newPlace, province: e.target.value })
                   }
-                  required
                 />
               </div>
             </div>
@@ -257,20 +306,18 @@ export function SubmitReportPage() {
                 aria-describedby="place-postal-hint"
               />
               <p id="place-postal-hint" className="text-xs text-zinc-500">
-                {CANADIAN_POSTAL_CODE_MESSAGE}. Only valid characters are accepted.
+                Only postal code is required for lookup. Address, city, and
+                province fill in from the result.
               </p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="place-category">
-                Category <RequiredMark />
-              </Label>
+              <Label htmlFor="place-category">Category</Label>
               <Select
                 id="place-category"
                 value={newPlace.category}
                 onChange={(e) =>
                   setNewPlace({ ...newPlace, category: e.target.value })
                 }
-                required
               >
                 {MERCHANT_CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -300,7 +347,10 @@ export function SubmitReportPage() {
                     className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:border-cobalt-500 dark:border-zinc-700"
                     onClick={() => applyGeocodeResult(result)}
                   >
-                    {result.addressLine1}, {result.city}, {result.province}{" "}
+                    {resolveGeocodeAddressLine1(result) ||
+                      `${result.latitude.toFixed(5)}, ${result.longitude.toFixed(5)}`}
+                    {result.city ? `, ${result.city}` : ""}
+                    {result.province ? `, ${result.province}` : ""}{" "}
                     {result.postalCode}
                   </button>
                 ))}
@@ -316,10 +366,11 @@ export function SubmitReportPage() {
               <LocationPicker
                 latitude={coordinates.latitude}
                 longitude={coordinates.longitude}
-                onChange={(latitude, longitude) =>
-                  setCoordinates({ latitude, longitude })
-                }
+                onChange={(latitude, longitude) => void handlePinChange(latitude, longitude)}
               />
+              {pinGeocodeLoading ? (
+                <p className="text-xs text-zinc-500">Looking up address for pin location…</p>
+              ) : null}
               <form onSubmit={handleCreatePlace}>
                 <Button type="submit">Add Place</Button>
               </form>
