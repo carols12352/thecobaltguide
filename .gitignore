@@ -25,6 +25,12 @@
 data/geocode-cache.json
 data/rewards-canada/cobaltcanada.json
 *.pem
+*.p12
+*.key
+credentials.json
+**/credentials.json
+.sentryclirc
+.npmrc
 
 # debug
 npm-debug.log*
@@ -32,13 +38,20 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — never commit secrets (.env.example is the only exception)
 .env*
 !.env.example
 
 # vercel
 .vercel
 
+# supabase CLI local state (linked project ref, pooler URLs, etc.)
+supabase/.temp/
+supabase/.branches/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# turbo / build artifacts
+.turbo
