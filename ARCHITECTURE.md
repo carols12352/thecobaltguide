@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture and Feature Readiness
 
-> Status: code-based assessment, verified 2026-07-13.
+> Status: code and primary hosted-database assessment, verified 2026-07-14.
 >
 > Source of truth: application code and `supabase/migrations/`; this document records the current implementation and the gates for adding product scope.
 
@@ -26,10 +26,11 @@ The product is technically ready for small, isolated UI and read-only improvemen
 | Server layer | About 3.9k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Automated tests | 222 tests across 39 Vitest files |
-| CI | lint, typecheck, unit tests, production build |
-| Integration/E2E tests | Not present |
+| Automated tests | 222 unit tests across 39 Vitest files; 14 live RLS/grant tests via `npm run test:rls` |
+| CI | lint, typecheck, unit tests, live local RLS tests, production build |
+| Integration/E2E tests | Live RLS matrix present; broader workflow/E2E coverage not present |
 | Production error monitoring | Not connected; the Sentry module is a stub |
+| RLS lockdown | Corrective migrations `20260714120000`–`20260714170000` are applied and verified on the primary hosted project; they enforce explicit policies, grants, function ACLs, safe defaults, bounded public RPCs, and removal of unused legacy RPCs |
 
 These numbers are a point-in-time aid, not architectural targets.
 
@@ -163,27 +164,11 @@ This foundation is sufficient for continued development inside the monolith.
 
 #### 6.1 Lock down RLS and direct database access
 
-The initial migration currently permits a signed-in user to update their own `profiles` row without limiting writable columns. Based on the migration alone, a client could attempt to change protected fields such as `role`, `status`, `reputation_score`, or `report_count` directly through Supabase. This must be fixed and verified against the deployed database.
+Corrective migrations `20260714120000`–`20260714170000` remove permissive client INSERT/UPDATE paths and public raw profile/report SELECT, define least-privilege table and function grants, make future migration-created objects default-deny, bound public map RPC work, and remove unused legacy RPCs. Application mutations continue through the service-role client; public place report reads use the admin client in `report-repository.findByPlaceId` and return API projections only.
 
-The database also permits authenticated clients to insert places, reports, and flags directly. Direct Supabase requests can therefore bypass Route Handler checks for:
+The primary hosted Supabase project was verified through migration history, a read-only schema dump, and anonymous Data API smoke checks on 2026-07-14. Any additional environment must apply the same full migration chain. Run `npm run test:rls` only against a migrated local or disposable staging database because the suite creates and removes fixtures. Remaining Stage A work is transactional writes, observability, and geocode protection.
 
-- per-user daily limits and cooldowns;
-- IP rate limits;
-- reputation-based blocking;
-- service-controlled report classification;
-- cache invalidation and summary refresh.
-
-Active raw reports and profiles are broadly selectable through RLS, even though the application UI exposes grouped report data. That can reveal identifiers, notes, and profile fields beyond the intended public API.
-
-Required outcome:
-
-1. Add a migration that uses least-privilege grants and policies.
-2. Restrict profile self-update to explicitly safe columns, or route it through a controlled RPC/API.
-3. Remove direct client writes that must obey application business rules, or replace them with database RPCs that enforce the same rules atomically.
-4. Expose only intentional public report/profile fields, preferably through API projections or restricted views.
-5. Add automated RLS tests for anonymous, user, moderator, and admin roles.
-
-This is the highest-priority prerequisite for new features.
+Previously, the initial migration permitted a signed-in user to update their own `profiles` row without limiting writable columns, and authenticated clients could insert places, reports, and flags directly—bypassing Route Handler checks for rate limits, reputation, classification, and cache/summary refresh.
 
 #### 6.2 Make authoritative multi-table actions atomic
 
@@ -210,11 +195,10 @@ No analytics vendor is mandatory. The requirement is actionable signals and aler
 
 ### P1 — strengthen before medium-complexity features
 
-#### 6.4 Add integration and critical-path E2E coverage
+#### 6.4 Extend integration and critical-path E2E coverage
 
-The current 222 tests are primarily unit tests with mocked repositories and caches. Add a local/test Supabase suite that applies migrations and verifies:
+The live local Supabase suite already reapplies the full migration chain and verifies RLS, table grants, function ACLs, inactive-row filtering, and bounded public RPC behavior. Broader integration coverage should still verify:
 
-- RLS and grants for every role;
 - report submission, classification, aggregation, deletion, and moderation;
 - duplicate-place prevention and place merge rollback behavior;
 - PostGIS viewport boundaries and pagination;
@@ -266,7 +250,7 @@ Implement these only when a selected feature requires them:
 | --- | --- | --- |
 | UI polish and local presentation changes | Ready | Can proceed with existing tests and visual verification |
 | New bounded public read/filter | Mostly ready | Add query/index and response-contract tests; measure payload and latency |
-| New authenticated mutation | Not ready | Complete RLS and transactional P0 work first |
+| New authenticated mutation | Not ready | Complete transactional P0 write work next (RLS lockdown landed) |
 | More moderation workflows | Not ready | First make existing moderation actions atomic and integration-tested |
 | More geocoding-dependent behavior | Not ready | Add endpoint protection, timeouts, cache, and provider monitoring |
 | Second card product | Partially ready | Schema supports it; product behavior, cache isolation, and fixtures do not yet prove it |
@@ -294,8 +278,8 @@ Small read-only work does not need heavyweight design. The checklist scales with
 
 ### Stage A — release safety
 
-1. Audit the deployed Supabase grants/RLS and add corrective migrations.
-2. Add automated RLS tests before relying on application roles.
+1. ~~Audit the deployed Supabase grants/RLS and add corrective migrations.~~ **Done** (`20260714120000`–`20260714170000`); the primary hosted project is applied and verified. Apply the full chain to any additional database and verify locally or in disposable staging with `npm run test:rls` (`supabase/tests/README.md`).
+2. ~~Add automated RLS tests before relying on application roles.~~ **Done** (local suite and dedicated CI job).
 3. Convert report and moderation write workflows to transactional database operations.
 4. Wire production exception reporting and basic latency/failure dashboards.
 5. Rate-limit and time-bound geocoding calls.
@@ -359,6 +343,8 @@ At the time of this assessment:
 npm test          39 files, 222 tests passed
 npm run typecheck passed
 npm run lint      passed
+npm run test:rls  1 file, 14 tests passed
+npm run build     passed
 ```
 
-These checks validate the current TypeScript and unit-test baseline. They do not validate deployed RLS, real Supabase transactions, external providers, browser journeys, or production operations; the readiness plan above closes those gaps.
+These checks validate the current TypeScript, unit-test, build, and local RLS baseline. The primary hosted project additionally passed migration-history/schema verification and read-only anonymous API smoke checks. This does not validate every future environment, multi-step transaction behavior, external providers, browser journeys, or production operations; remaining Stage A items close transactional writes, observability, and geocode protection.
