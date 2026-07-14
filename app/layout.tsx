@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cobalt 5x Merchant Map",
+  title: "The Cobalt Guide",
   description:
     "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
 };
@@ -30,7 +30,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <body className="flex min-h-full flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
         <Header />
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         <Footer />

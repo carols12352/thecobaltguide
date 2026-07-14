@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/brand/brand-mark";
 
 interface AuthShellProps {
   title: string;
@@ -19,26 +20,25 @@ export function AuthShell({
   return (
     <div
       className={cn(
-        "flex flex-1 flex-col bg-zinc-50 px-4 py-10 dark:bg-zinc-950",
+        "relative flex flex-1 flex-col overflow-hidden bg-zinc-50 px-4 py-12 sm:py-16 dark:bg-zinc-950",
         className,
       )}
     >
-      <div className="mx-auto w-full max-w-md">
-        <Link href="/" className="mb-8 inline-flex items-center gap-2 font-semibold">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cobalt-600 text-sm text-white">
-            5x
-          </span>
-          <span>Cobalt Merchant Map</span>
+      <div className="surface-grid pointer-events-none absolute inset-0 opacity-60" aria-hidden="true" />
+      <div className="relative mx-auto w-full max-w-md">
+        <Link href="/" className="mb-8 inline-flex items-center gap-2.5 rounded-lg font-semibold tracking-tight">
+          <BrandMark className="h-9 w-9 drop-shadow-sm" />
+          <span>The Cobalt Guide</span>
         </Link>
 
-        <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="border-b border-zinc-100 px-6 py-5 dark:border-zinc-800">
-            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <div className="rounded-2xl border border-zinc-200 bg-white shadow-xl shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="border-b border-zinc-100 px-6 py-6 dark:border-zinc-800 sm:px-7">
+            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+            <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
               {subtitle}
             </p>
           </div>
-          <div className="px-6 py-5">{children}</div>
+          <div className="px-6 py-6 sm:px-7">{children}</div>
           <div className="border-t border-zinc-100 px-6 py-4 text-center text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
             {footer}
           </div>
