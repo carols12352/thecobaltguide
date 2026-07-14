@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Header } from "@/components/layout/header";
-import { Footer } from "@/components/layout/footer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cobalt 5x Merchant Map",
+  title: "Cobalt Guide",
   description:
-    "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
+    "A better way to discover where your Cobalt card earns more across Canada.",
 };
 
 export default function RootLayout({
@@ -30,11 +28,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-        <Header />
-        <main className="flex min-h-0 flex-1 flex-col">{children}</main>
-        <Footer />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

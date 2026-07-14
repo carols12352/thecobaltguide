@@ -1,0 +1,366 @@
+.page {
+  --ink: #f4f7ff;
+  --muted: rgba(224, 232, 255, 0.62);
+  --line: rgba(193, 211, 255, 0.17);
+  --signal: #ffcf4a;
+  position: relative;
+  display: flex;
+  min-height: 100svh;
+  overflow: hidden;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at 78% 42%, rgba(75, 122, 255, 0.2), transparent 27rem),
+    #071a58;
+  color: var(--ink);
+  isolation: isolate;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: clamp(2.5rem, 5vw, 5rem) clamp(2.5rem, 5vw, 5rem);
+  mask-image: linear-gradient(to bottom, black 10%, rgba(0, 0, 0, 0.78) 72%, transparent);
+}
+
+.scanline {
+  position: absolute;
+  inset-inline: 0;
+  top: -12%;
+  z-index: -1;
+  height: 14rem;
+  background: linear-gradient(to bottom, transparent, rgba(125, 164, 255, 0.09), transparent);
+  animation: scan 8s linear infinite;
+  pointer-events: none;
+}
+
+.header,
+.footer {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: clamp(1.25rem, 4vw, 4.5rem);
+}
+
+.header {
+  min-height: 6rem;
+  border-bottom: 1px solid var(--line);
+  animation: reveal-down 700ms 100ms both cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.brandMark {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid rgba(244, 247, 255, 0.65);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.64rem;
+  letter-spacing: -0.05em;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.brand:hover .brandMark {
+  background: var(--ink);
+  color: #071a58;
+}
+
+.buildLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.statusDot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--signal);
+  box-shadow: 0 0 0 0 rgba(255, 207, 74, 0.5);
+  animation: pulse 2.2s ease-out infinite;
+}
+
+.hero {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1.08fr) minmax(24rem, 0.92fr);
+  align-items: center;
+  gap: clamp(2rem, 4vw, 6rem);
+  padding: clamp(3rem, 7vh, 6.5rem) clamp(1.25rem, 4vw, 4.5rem);
+}
+
+.copy {
+  position: relative;
+  z-index: 1;
+  max-width: 58rem;
+}
+
+.eyebrow {
+  margin: 0 0 clamp(1.5rem, 3vh, 2.5rem);
+  color: var(--signal);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: clamp(0.67rem, 0.9vw, 0.78rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  animation: reveal-up 700ms 260ms both cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(4.5rem, 11vw, 10.5rem);
+  font-weight: 520;
+  letter-spacing: -0.085em;
+  line-height: 0.78;
+  animation: reveal-up 900ms 340ms both cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.title span {
+  display: block;
+  margin-left: clamp(1.5rem, 7vw, 7.5rem);
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(244, 247, 255, 0.66);
+}
+
+.description {
+  max-width: 31rem;
+  margin: clamp(2.25rem, 5vh, 4rem) 0 0 clamp(1.5rem, 7vw, 7.5rem);
+  color: var(--muted);
+  font-size: clamp(1rem, 1.4vw, 1.25rem);
+  letter-spacing: -0.02em;
+  line-height: 1.6;
+  animation: reveal-up 700ms 520ms both cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.blueprint {
+  position: relative;
+  width: min(40vw, 38rem);
+  aspect-ratio: 1;
+  justify-self: end;
+  animation: blueprint-in 1.2s 260ms both cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.blueprint svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: rgba(190, 209, 255, 0.25);
+  stroke-width: 1;
+  transform: rotate(-8deg);
+  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.blueprint:hover svg {
+  transform: rotate(0deg) scale(1.02);
+}
+
+.blueprint .route {
+  stroke: var(--signal);
+  stroke-dasharray: 7 9;
+  stroke-width: 2;
+  animation: route-flow 18s linear infinite;
+}
+
+.blueprint .routePoint {
+  fill: #071a58;
+  stroke: var(--signal);
+  stroke-width: 3;
+}
+
+.blueprintNumber {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: rgba(244, 247, 255, 0.92);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: clamp(2.8rem, 6vw, 6rem);
+  font-weight: 500;
+  letter-spacing: -0.08em;
+  transform: translate(-50%, -50%);
+}
+
+.coordinateNorth,
+.coordinateWest {
+  position: absolute;
+  color: rgba(224, 232, 255, 0.46);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+}
+
+.coordinateNorth {
+  top: 4%;
+  left: 54%;
+}
+
+.coordinateWest {
+  right: 2%;
+  bottom: 28%;
+  transform: rotate(90deg);
+}
+
+.footer {
+  min-height: 4.75rem;
+  border-top: 1px solid var(--line);
+  color: rgba(224, 232, 255, 0.48);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: reveal-up 700ms 680ms both cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.footer p {
+  margin: 0;
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes reveal-down {
+  from {
+    opacity: 0;
+    transform: translateY(-1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes blueprint-in {
+  from {
+    opacity: 0;
+    transform: scale(0.82) rotate(8deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 30% {
+    box-shadow: 0 0 0 0 rgba(255, 207, 74, 0.5);
+  }
+  70%, 100% {
+    box-shadow: 0 0 0 0.7rem rgba(255, 207, 74, 0);
+  }
+}
+
+@keyframes scan {
+  to {
+    transform: translateY(125svh);
+  }
+}
+
+@keyframes route-flow {
+  to {
+    stroke-dashoffset: -320;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+    align-content: center;
+  }
+
+  .blueprint {
+    position: absolute;
+    right: -15rem;
+    bottom: 3rem;
+    z-index: 0;
+    width: 34rem;
+    opacity: 0.48;
+  }
+
+  .copy {
+    max-width: 44rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .header {
+    min-height: 5.25rem;
+  }
+
+  .brand {
+    font-size: 0.7rem;
+  }
+
+  .buildLabel {
+    font-size: 0;
+  }
+
+  .buildLabel::after {
+    content: "In progress";
+    font-size: 0.62rem;
+  }
+
+  .hero {
+    padding-block: 3.5rem;
+  }
+
+  .title {
+    font-size: clamp(4.2rem, 22vw, 6.5rem);
+    line-height: 0.84;
+  }
+
+  .title span,
+  .description {
+    margin-left: 0;
+  }
+
+  .description {
+    max-width: 19rem;
+  }
+
+  .blueprint {
+    right: -18rem;
+    bottom: 1rem;
+  }
+
+  .footerMeta {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page *,
+  .page *::before,
+  .page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
