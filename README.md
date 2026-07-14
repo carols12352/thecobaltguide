@@ -171,7 +171,7 @@ npx supabase link --project-ref your-project-ref
 npx supabase db push
 ```
 
-The migrations create the database tables, RLS policies, PostGIS functions and indexes, default Amex Cobalt card product, report aggregation support, moderation fields, and optimized viewport queries.
+The migrations create the database tables, least-privilege RLS policies and grants, restricted function ACLs, bounded PostGIS functions and indexes, the default Amex Cobalt card product, report aggregation support, moderation fields, and optimized viewport queries. The Stage A security chain is `20260714120000`–`20260714170000`. See [`supabase/migrations/README.md`](supabase/migrations/README.md) for migration ownership, local/hosted workflows, deployment, and drift-repair rules.
 
 For a fully local Supabase stack, install the Supabase CLI and Docker, then run:
 
@@ -181,6 +181,16 @@ npx supabase db reset
 ```
 
 Copy the local API URL and keys printed by the CLI into `.env.local`.
+
+Verify the database security boundary locally:
+
+```bash
+npm run test:rls
+```
+
+The dedicated GitHub Actions `rls-tests` job starts a fresh local Supabase stack,
+applies every migration, and runs the same suite. The suite creates and deletes
+test users and rows, so do not point it at production.
 
 ### 4. Configure authentication
 
@@ -352,7 +362,7 @@ __tests__/            Vitest unit and integration-style tests
 
 ## Production checklist
 
-1. Apply all Supabase migrations.
+1. Apply all Supabase migrations and confirm migration history through `20260714170000`.
 2. Set production Supabase, application URL, and map environment variables.
 3. Configure production auth callback URLs and email delivery.
 4. Configure both Upstash read and write tokens.

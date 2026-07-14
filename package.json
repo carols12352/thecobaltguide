@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:rls": "vitest run --config vitest.rls.config.ts",
     "import:rewards-canada": "tsx supabase/scripts/import-rewards-canada.ts",
     "import:rewards-canada:dry": "tsx supabase/scripts/import-rewards-canada.ts --dry-run --limit 20"
   },
