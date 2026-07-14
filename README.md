@@ -211,6 +211,34 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### 6. Configure Vercel deployments
+
+The deployment workflow in [`.github/workflows/vercel-deploy.yml`](.github/workflows/vercel-deploy.yml) deploys only the development branch:
+
+| Git branch | Vercel environment | Purpose |
+| --- | --- | --- |
+| `main` | Preview | Full development and preview application |
+
+The `release` branch is intentionally outside this workflow. Production remains
+manual or can be added later as a separately protected deployment workflow; its
+current content is the static Under Production shell.
+
+Configure these GitHub Actions secrets before enabling the workflow:
+
+- `VERCEL_TOKEN`: a Vercel access token with permission to deploy the project
+- `VERCEL_ORG_ID`: the project team or account ID
+- `VERCEL_PROJECT_ID`: the Vercel project ID
+
+The IDs are available in `.vercel/project.json` after running `vercel link`; the
+`.vercel` directory remains gitignored. The workflow pulls the Vercel Preview
+environment, builds inside GitHub Actions, and uploads the prebuilt output.
+Every push to `main` creates a Preview deployment and never updates Production.
+
+Create a GitHub Environment named `preview` if environment-level secrets or
+deployment protection are desired. Keep Vercel's
+automatic Git deployments disabled for this project when using this workflow,
+otherwise each push can create a duplicate deployment.
+
 ## Scripts
 
 | Command | Purpose |

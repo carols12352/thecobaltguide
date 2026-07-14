@@ -58,7 +58,7 @@ Supabase
   └─ RLS
 ```
 
-The deployment target documented by the project is Vercel or another Node.js 22+ host. Cloudflare, PostHog, Resend, background workers, and Sentry are either optional configuration or unimplemented; they are not part of the guaranteed current architecture.
+The deployment target documented by the project is Vercel or another Node.js 22+ host. GitHub Actions deploys `main` only to the Vercel Preview environment. The `release` branch is excluded from automated deployment and currently contains the static Under Production shell for a separately managed production release. Cloudflare, PostHog, Resend, background workers, and Sentry are either optional configuration or unimplemented; they are not part of the guaranteed current architecture.
 
 ### Request layering
 
