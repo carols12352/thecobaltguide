@@ -13,7 +13,9 @@ function startOfUtcDayIso(date = new Date()): string {
 
 export class ReportRepository {
   async findByPlaceId(placeId: string, limit = 20): Promise<MultiplierReport[]> {
-    const supabase = await createClient();
+    // Service role: public report SELECT was removed from RLS so raw rows
+    // are not client-readable; API projections go through this path.
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("multiplier_reports")
       .select("*")
