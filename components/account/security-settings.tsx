@@ -192,7 +192,7 @@ export function SecuritySettings() {
         <CardHeader>
           <h2 className="font-semibold">Sign-in methods</h2>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Manage linked providers and your email sign-in password.
+            Manage your connected providers and password.
           </p>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -208,8 +208,8 @@ export function SecuritySettings() {
                     <p className="text-sm font-medium">Email and password</p>
                     <p className="mt-0.5 text-xs text-zinc-500">
                       {hasPasswordLogin
-                        ? "You can sign in with your email and password on the login page."
-                        : "Set a password to also sign in with email on the login page."}
+                        ? "Password sign-in is enabled."
+                        : "Add a password as another sign-in option."}
                     </p>
                   </div>
                   {!passwordFormOpen && (
@@ -258,8 +258,7 @@ export function SecuritySettings() {
         title="Password saved"
       >
         <p>
-          You can now sign in with your email and password on the login page, in
-          addition to any linked providers.
+          Password sign-in is now available alongside your linked providers.
         </p>
         <Button
           type="button"

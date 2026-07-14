@@ -26,8 +26,8 @@ export function PlaceCard({ place, selected, onSelect }: PlaceCardProps) {
 
   const content = (
     <Card
-      className={`transition-shadow hover:shadow-md ${
-        selected ? "ring-2 ring-cobalt-500" : ""
+      className={`transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-zinc-300 hover:shadow-md dark:hover:border-zinc-700 ${
+        selected ? "border-cobalt-400 ring-2 ring-cobalt-500/25" : ""
       } ${onSelect ? "cursor-pointer" : ""}`}
     >
       <CardContent className="flex items-start justify-between gap-3 py-3">
@@ -57,7 +57,7 @@ export function PlaceCard({ place, selected, onSelect }: PlaceCardProps) {
     return (
       <button
         type="button"
-        className="w-full text-left"
+        className="w-full rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cobalt-500 focus-visible:ring-offset-2"
         onClick={() => onSelect(place)}
       >
         {content}

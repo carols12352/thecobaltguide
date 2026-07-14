@@ -1,306 +1,75 @@
-"use client";
+import Link from "next/link";
+import { MapPreview } from "@/components/map/map-preview";
 
-import { useCallback, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { PaginationBar } from "@/components/ui/pagination-bar";
-import { MapFiltersBar, type MapFilters } from "@/components/filters/map-filters";
-import { PlaceCard } from "@/components/places/place-card";
-import { sortPlacesByDistance } from "@/lib/map/distance";
-import {
-  getHomeListWidthPx,
-  isHomeSplitLayout,
-} from "@/lib/layout/home-split";
-import { useViewportWidth } from "@/lib/hooks/use-viewport-width";
-import { MAP_DEFAULTS } from "@/config/constants";
-import { cn } from "@/lib/utils";
-import type { MapCitySummary, MapPlace } from "@/types/domain";
-import type { MapViewportMeta } from "@/components/map/merchant-map";
-
-const HOME_LIST_PAGE_SIZE = 10;
-
-const MerchantMap = dynamic(
-  () =>
-    import("@/components/map/merchant-map").then((m) => m.MerchantMap),
-  { ssr: false, loading: () => <MapSkeleton /> },
-);
-
-function MapSkeleton() {
-  return (
-    <div className="flex h-full items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-      <p className="text-zinc-500">Loading map…</p>
-    </div>
-  );
-}
+const FEATURES = [
+  ["Find", "Browse reported multipliers across Canadian merchants."],
+  ["Check", "See recency and confidence before relying on a result."],
+  ["Contribute", "Add missing places or help correct community data."],
+] as const;
 
 export default function HomePage() {
-  const [filters, setFilters] = useState<MapFilters>({
-    multiplier: "",
-    category: "",
-  });
-  const [viewportPlaces, setViewportPlaces] = useState<MapPlace[]>([]);
-  const [searchResults, setSearchResults] = useState<MapPlace[] | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [listOpen, setListOpen] = useState(false);
-  const [listPage, setListPage] = useState(1);
-  const [mapInViewEnabled, setMapInViewEnabled] = useState(true);
-  const [outOfArea, setOutOfArea] = useState(false);
-  const [citySummary, setCitySummary] = useState<MapCitySummary | null>(null);
-  const [listTruncated, setListTruncated] = useState(false);
-  const [viewportCount, setViewportCount] = useState<number | null>(null);
-  const [selectedPlace, setSelectedPlace] = useState<MapPlace | null>(null);
-  const viewportWidth = useViewportWidth();
-  const splitLayout = isHomeSplitLayout(viewportWidth);
-  const listWidthPx = getHomeListWidthPx(viewportWidth);
-
-  const listPlaces = searchResults ?? viewportPlaces;
-  const isSearchMode = searchResults !== null;
-  const maxListPage = Math.max(
-    1,
-    Math.ceil(listPlaces.length / HOME_LIST_PAGE_SIZE),
-  );
-  const currentListPage = Math.min(listPage, maxListPage);
-
-  const paginatedPlaces = useMemo(() => {
-    const start = (currentListPage - 1) * HOME_LIST_PAGE_SIZE;
-    return listPlaces.slice(start, start + HOME_LIST_PAGE_SIZE);
-  }, [currentListPage, listPlaces]);
-
-  const handlePlacesLoaded = useCallback(
-    (places: MapPlace[], meta: MapViewportMeta) => {
-      setMapInViewEnabled(meta.inViewListEnabled);
-      setOutOfArea(meta.outOfArea ?? false);
-      setCitySummary(meta.citySummary ?? null);
-      setListTruncated(meta.truncated ?? false);
-      setViewportCount(meta.viewportCount ?? null);
-      setViewportPlaces(sortPlacesByDistance(places, meta.center));
-      if (meta.resetListPage !== false) {
-        setListPage(1);
-      }
-    },
-    [],
-  );
-
-  function formatCityListLabel(summary: MapCitySummary): string {
-    return summary.city
-      ? `${summary.count.toLocaleString()} in ${summary.city}`
-      : `${summary.count.toLocaleString()} merchants in view`;
-  }
-
-  function formatInViewListLabel(
-    visibleCount: number,
-    truncated: boolean,
-    totalCount: number | null,
-  ): string {
-    if (truncated && totalCount != null && totalCount > visibleCount) {
-      return `${totalCount.toLocaleString()} places in view`;
-    }
-    if (truncated) {
-      return `${MAP_DEFAULTS.maxResults}+ places in view`;
-    }
-    return `${visibleCount.toLocaleString()} places in view`;
-  }
-
-  function handlePlaceSelect(place: MapPlace) {
-    setSelectedPlace(place);
-    if (window.matchMedia("(max-width: 1023px)").matches) {
-      setListOpen(false);
-    }
-  }
-
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    setSearchError(null);
-
-    if (!searchQuery.trim()) {
-      setSearchResults(null);
-      setSelectedPlace(null);
-      setListPage(1);
-      return;
-    }
-
-    setSearchLoading(true);
-    try {
-      const res = await fetch(
-        `/api/places/search?q=${encodeURIComponent(searchQuery)}`,
-      );
-      if (!res.ok) throw new Error("Search failed");
-      const data = await res.json();
-      setSearchResults(data.places ?? []);
-      setSelectedPlace(null);
-      setListOpen(true);
-      setListPage(1);
-    } catch {
-      setSearchError("Search failed. Please try again.");
-    } finally {
-      setSearchLoading(false);
-    }
-  }
-
-  function clearSearch() {
-    setSearchQuery("");
-    setSearchResults(null);
-    setSearchError(null);
-    setSelectedPlace(null);
-    setListPage(1);
-  }
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <section className="border-b border-zinc-200 bg-zinc-50 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-xl font-bold">Find 5x Merchants Near You</h1>
-            <p className="text-sm text-zinc-600">
-              Community-sourced Amex Cobalt multiplier data across Canada.
+    <>
+      <section className="relative isolate overflow-hidden border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="surface-grid pointer-events-none absolute inset-0 -z-10 opacity-70" aria-hidden="true" />
+        <div className="mx-auto flex min-h-[30rem] max-w-7xl items-center px-4 py-16 sm:px-6 sm:py-20">
+          <div className="hero-enter max-w-3xl">
+            <p className="text-sm font-semibold tracking-[0.15em] text-cobalt-700 uppercase dark:text-cobalt-300">The Cobalt Guide</p>
+            <h1 className="mt-5 text-balance text-4xl font-semibold tracking-[-0.045em] text-zinc-950 sm:text-6xl dark:text-white">
+              Find where your Cobalt card goes further.
+            </h1>
+            <p className="mt-5 max-w-2xl text-lg leading-8 text-zinc-600 dark:text-zinc-300">
+              A community-maintained map of reported merchant multipliers across Canada.
             </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/map" className="inline-flex h-11 items-center justify-center rounded-lg bg-cobalt-600 px-5 text-sm font-semibold text-white shadow-sm transition-[background-color,transform,box-shadow] duration-200 ease-out hover:-translate-y-px hover:bg-cobalt-700 hover:shadow-md active:translate-y-0 active:shadow-sm">
+                Open full map
+              </Link>
+              <Link href="/about" className="inline-flex h-11 items-center justify-center rounded-lg border border-zinc-300 bg-white px-5 text-sm font-semibold text-zinc-800 shadow-sm transition-[background-color,border-color,transform] duration-200 ease-out hover:-translate-y-px hover:border-zinc-400 hover:bg-zinc-50 active:translate-y-0 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800">
+                About the guide
+              </Link>
+            </div>
           </div>
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search merchants…"
-              aria-label="Search merchants"
-              className="w-64"
-            />
-            <Button type="submit" disabled={searchLoading}>
-              {searchLoading ? "Searching…" : "Search"}
-            </Button>
-            {isSearchMode && (
-              <Button type="button" variant="outline" onClick={clearSearch}>
-                Clear
-              </Button>
-            )}
-          </form>
-        </div>
-        {searchError && (
-          <p className="mx-auto mt-2 max-w-7xl text-sm text-red-600">{searchError}</p>
-        )}
-        <div className="mx-auto mt-4 max-w-7xl">
-          <MapFiltersBar filters={filters} onChange={setFilters} />
         </div>
       </section>
 
-      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 overflow-hidden p-4 lg:flex-row">
-        <div
-          className={cn(
-            "relative h-[50vh] min-w-0 lg:h-[calc(100vh-12rem)]",
-            splitLayout ? "flex-1" : "shrink-0",
-          )}
-        >
-          <MerchantMap
-            filters={filters}
-            selectedPlace={selectedPlace}
-            onPlaceSelect={handlePlaceSelect}
-            onPlacesLoaded={handlePlacesLoaded}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="absolute bottom-3 right-3 z-10 bg-white/95 shadow lg:hidden"
-            onClick={() => setListOpen((open) => !open)}
-          >
-            {listOpen
-              ? "Hide list"
-              : isSearchMode || mapInViewEnabled
-                ? formatInViewListLabel(
-                    listPlaces.length,
-                    listTruncated,
-                    viewportCount,
-                  )
-                : outOfArea
-                  ? "Outside Canada"
-                  : citySummary
-                    ? formatCityListLabel(citySummary)
-                    : "Zoom in to see places"}
-          </Button>
-        </div>
-
-        <aside
-          style={splitLayout ? { width: listWidthPx } : undefined}
-          className={cn(
-            "flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden",
-            splitLayout
-              ? "shrink-0 lg:h-[calc(100vh-12rem)]"
-              : "w-full max-h-[45vh]",
-            listOpen ? "flex" : "hidden lg:flex",
-          )}
-        >
-          <h2 className="shrink-0 text-sm font-semibold text-zinc-500">
-            {isSearchMode
-              ? `${listPlaces.length} search results`
-              : mapInViewEnabled
-                ? formatInViewListLabel(
-                    listPlaces.length,
-                    listTruncated,
-                    viewportCount,
-                  )
-                : outOfArea
-                  ? "Outside Canada"
-                  : citySummary
-                    ? formatCityListLabel(citySummary)
-                    : "Zoom in to browse merchants"}
-          </h2>
-
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
-            {paginatedPlaces.map((place) => (
-              <PlaceCard
-                key={place.id}
-                place={place}
-                selected={place.id === selectedPlace?.id}
-                onSelect={handlePlaceSelect}
-              />
-            ))}
-            {!isSearchMode && mapInViewEnabled && listTruncated ? (
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                {viewportCount != null && viewportCount > listPlaces.length
-                  ? `${viewportCount.toLocaleString()} merchants in this view. Showing ${listPlaces.length}. Zoom in for full results.`
-                  : "Showing a limited set of merchants in this area. Zoom in for full results."}
-              </p>
-            ) : null}
-            {!isSearchMode && outOfArea ? (
-              <p className="text-sm text-zinc-500">
-                Merchant data covers Canada. Pan the map back to see merchants.
-              </p>
-            ) : null}
-            {!isSearchMode && !mapInViewEnabled && !outOfArea && citySummary ? (
-              <p className="text-sm text-zinc-500">
-                {citySummary.count.toLocaleString()} merchants in this view.
-                Zoom in to browse the list.
-              </p>
-            ) : null}
-            {!isSearchMode && !mapInViewEnabled && !outOfArea && !citySummary ? (
-              <p className="text-sm text-zinc-500">
-                Zoom in on the map to browse merchants in this area.
-              </p>
-            ) : null}
-            {listPlaces.length === 0 && (isSearchMode || mapInViewEnabled) && (
-              <p className="text-sm text-zinc-500">
-                {isSearchMode
-                  ? "No merchants match your search."
-                  : "Move the map or adjust filters to see merchants."}
-              </p>
-            )}
+      <section aria-labelledby="preview-heading" className="bg-zinc-50/70 dark:bg-zinc-900/30">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
+          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.14em] text-cobalt-700 uppercase dark:text-cobalt-300">Quick lookup</p>
+              <h2 id="preview-heading" className="mt-2 text-3xl font-semibold tracking-[-0.035em]">Explore nearby reports</h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">Pan, zoom, or select a place for a quick look.</p>
+            </div>
+            <Link href="/map" className="group inline-flex items-center self-start rounded-md text-sm font-semibold text-cobalt-700 transition-colors duration-200 hover:text-cobalt-800 sm:self-auto dark:text-cobalt-300 dark:hover:text-cobalt-200">
+              Search and filter <span className="ml-2 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true">→</span>
+            </Link>
           </div>
+          <MapPreview />
+        </div>
+      </section>
 
-          {mapInViewEnabled && listPlaces.length > HOME_LIST_PAGE_SIZE ? (
-            <PaginationBar
-              compact
-              availableWidth={listWidthPx}
-              page={currentListPage}
-              total={listPlaces.length}
-              pageSize={HOME_LIST_PAGE_SIZE}
-              itemLabel="places"
-              onPageChange={setListPage}
-              className="shrink-0 min-w-0"
-            />
-          ) : null}
-        </aside>
-      </div>
-    </div>
+      <section aria-labelledby="features-heading" className="border-y border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
+          <h2 id="features-heading" className="sr-only">What you can do</h2>
+          <div className="grid gap-8 md:grid-cols-3">
+            {FEATURES.map(([title, copy], index) => (
+              <div key={title} className="border-t border-zinc-300 pt-5 transition-colors duration-200 hover:border-cobalt-500 dark:border-zinc-700">
+                <p className="font-mono text-xs text-cobalt-700 dark:text-cobalt-300">0{index + 1}</p>
+                <h3 className="mt-3 font-semibold">{title}</h3>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-600 dark:text-zinc-400">{copy}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-14 flex flex-col gap-5 border-t border-zinc-200 pt-10 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight">Help keep the map current.</h2>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Share a missing merchant or a recent multiplier result.</p>
+            </div>
+            <Link href="/submit" className="inline-flex h-10 items-center justify-center self-start rounded-lg border border-zinc-300 bg-white px-4 text-sm font-semibold shadow-sm transition-[background-color,border-color,transform] duration-200 hover:-translate-y-px hover:border-zinc-400 hover:bg-zinc-50 active:translate-y-0 sm:self-auto dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800">Add a merchant</Link>
+          </div>
+        </div>
+      </section>
+    </>
   );
 }

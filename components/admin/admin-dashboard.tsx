@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { getCategoryLabel } from "@/config/categories";
 import { REPORT_KIND_LABELS } from "@/lib/reports/report-kind";
-import { REPUTATION_ADMIN_HINT } from "@/lib/reputation/scoring";
 import {
   buildAdminPlacesSearchParams,
   parsePlaceSearchInput,
@@ -157,9 +156,6 @@ export function AdminDashboard() {
   const [hintsExpanded, setHintsExpanded] = useState(false);
 
   const isAdmin = session?.role === "admin";
-  const moderatorName =
-    session?.username ?? session?.email?.split("@")[0] ?? "moderator";
-
   const visibleTabs = useMemo(
     () => TABS.filter((item) => !item.adminOnly || isAdmin),
     [isAdmin],
@@ -527,12 +523,13 @@ export function AdminDashboard() {
 
   return (
     <AdminShell>
-      <div className="shrink-0 space-y-4 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+      <div className="shrink-0 space-y-4 border-b border-zinc-200 pb-4 pt-5 dark:border-zinc-800">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+            <p className="text-xs font-semibold tracking-[0.14em] text-cobalt-700 uppercase dark:text-cobalt-300">Community tools</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight">Moderation</h1>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Signed in as {session?.email ?? session?.username ?? "moderator"}
+              {session?.email ?? session?.username ?? "Moderator"}
               {" · "}
               <Badge variant="default">{session?.role}</Badge>
             </p>
@@ -548,20 +545,24 @@ export function AdminDashboard() {
           </p>
         ) : null}
 
-        <div className="flex flex-wrap gap-2">
+        <div role="tablist" aria-label="Admin sections" className="flex gap-1 overflow-x-auto rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
           {visibleTabs.map((item) => (
             <button
               key={item.id}
               type="button"
+              role="tab"
+              aria-selected={tab === item.id}
               onClick={() => setTab(item.id)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                "inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-200",
                 tab === item.id
-                  ? "bg-cobalt-600 text-white"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900",
+                  ? "bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-white"
+                  : "text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white",
               )}
             >
               {item.label}
+              {item.id === "reports" && stats.activeReports > 0 ? <span className="rounded bg-amber-100 px-1.5 text-[0.6875rem] text-amber-800 dark:bg-amber-950 dark:text-amber-200">{stats.activeReports}</span> : null}
+              {item.id === "flags" && stats.openFlags > 0 ? <span className="rounded bg-amber-100 px-1.5 text-[0.6875rem] text-amber-800 dark:bg-amber-950 dark:text-amber-200">{stats.openFlags}</span> : null}
             </button>
           ))}
         </div>
@@ -569,17 +570,22 @@ export function AdminDashboard() {
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-4">
         {tab === "overview" ? (
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Open flags" value={stats.openFlags} />
-          <StatCard label="Needs review" value={stats.activeReports} />
-          <StatCard label="Flagged reports" value={stats.flaggedReports} />
-          <StatCard label="Active places" value={stats.activePlaces} />
-          {isAdmin ? <StatCard label="Users" value={stats.users} className="sm:col-span-2 lg:col-span-1" /> : null}
-        </div>
+          <div className="space-y-5">
+            <section aria-labelledby="queue-summary-heading">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 id="queue-summary-heading" className="text-sm font-semibold">Queue summary</h2>
+                <p className="text-xs text-zinc-500">Current workspace</p>
+              </div>
+              <dl className={cn("grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-800", isAdmin ? "sm:grid-cols-5" : "sm:grid-cols-4")}>
+                <StatCard label="Open flags" value={stats.openFlags} />
+                <StatCard label="Review queue" value={stats.activeReports} />
+                <StatCard label="Flagged" value={stats.flaggedReports} />
+                <StatCard label="Places" value={stats.activePlaces} />
+                {isAdmin ? <StatCard label="Users" value={stats.users} className="col-span-2 sm:col-span-1" /> : null}
+              </dl>
+            </section>
             {(!hintsDismissed || hintsExpanded) && session ? (
               <AdminHintsCard
-                name={moderatorName}
                 isAdmin={isAdmin}
                 onDismiss={dismissAdminHints}
               />
@@ -590,7 +596,7 @@ export function AdminDashboard() {
       {tab === "reports" ? (
         <section className="space-y-3">
           {reports.map((report) => (
-            <Card key={report.id}>
+            <Card key={report.id} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
               <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -612,14 +618,14 @@ export function AdminDashboard() {
                     · {formatDate(report.transaction_date)}
                   </p>
                   <p className="text-xs text-zinc-500">
-                    Reported by {report.reporter?.username ?? "unknown"}
+                    Reporter: {report.reporter?.username ?? "unknown"}
                     {report.reporter?.id ? (
                       <>
                         {" · "}
                         <span className="font-mono">{report.reporter.id}</span>
                       </>
-                    ) : null}{" "}
-                    on {formatDate(report.created_at)}
+                    ) : null}{" · "}
+                    Submitted {formatDate(report.created_at)}
                   </p>
                   {report.notes ? (
                     <p className="text-sm text-zinc-600">{report.notes}</p>
@@ -634,7 +640,7 @@ export function AdminDashboard() {
                       href={`/admin/places/${report.places.id}`}
                       className="text-sm font-medium text-cobalt-600 hover:underline"
                     >
-                      Moderator view
+                      Open place →
                     </Link>
                   ) : null}
                 </div>
@@ -692,7 +698,7 @@ export function AdminDashboard() {
       {tab === "flags" ? (
         <section className="space-y-3">
           {flagGroups.map((group) => (
-            <Card key={group.placeId}>
+            <Card key={group.placeId} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
               <CardHeader className="pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -741,7 +747,7 @@ export function AdminDashboard() {
                 <div className="flex flex-wrap gap-2">
                   <Link href={`/admin/places/${group.placeId}`}>
                     <Button size="sm" variant="outline">
-                      Moderator view
+                      Open place
                     </Button>
                   </Link>
                   <Button
@@ -867,7 +873,7 @@ export function AdminDashboard() {
 
           <div className="space-y-3">
             {filteredPlaces.map((place) => (
-              <Card key={place.id}>
+              <Card key={place.id} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
                 <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -889,7 +895,7 @@ export function AdminDashboard() {
                       href={`/admin/places/${place.id}`}
                       className="text-sm font-medium text-cobalt-600 hover:underline"
                     >
-                      Moderator view
+                      Open place →
                     </Link>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1079,13 +1085,13 @@ export function AdminDashboard() {
       {hintsDismissed && !hintsExpanded ? (
         <div className="shrink-0 border-t border-zinc-200 py-3 text-center dark:border-zinc-800">
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Don&apos;t know what to do?{" "}
+            Need the action guide?{" "}
             <button
               type="button"
               onClick={openAdminHints}
               className="font-medium text-cobalt-600 hover:underline dark:text-cobalt-400"
             >
-              Check admin hints
+              Show guide
             </button>
           </p>
         </div>
@@ -1222,11 +1228,9 @@ function AdminUserCard({
 }
 
 function AdminHintsCard({
-  name,
   isAdmin,
   onDismiss,
 }: {
-  name: string;
   isAdmin: boolean;
   onDismiss: () => void;
 }) {
@@ -1235,12 +1239,10 @@ function AdminHintsCard({
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Welcome, {name}
+            Moderation guide
           </h2>
           <p className="max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Quick reference for the moderation queue. Only new locations and
-            error reports need your review — routine updates confirm
-            automatically.
+            New-location and error reports enter the review queue. Routine confirmations publish automatically.
           </p>
         </div>
         <button
@@ -1266,54 +1268,34 @@ function AdminHintsCard({
         </button>
       </CardHeader>
 
-      <CardContent className="space-y-8">
-        <HintsSection title="What needs review">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <HintTile
-              badge={REPORT_KIND_LABELS.new_location}
-              badgeVariant="warning"
-              description="First report on a user-submitted place."
-            />
-            <HintTile
-              badge={REPORT_KIND_LABELS.error}
-              badgeVariant="warning"
-              description="User reported incorrect multiplier data."
-            />
+      <CardContent>
+        <div className="grid gap-8 md:grid-cols-3">
+        <HintsSection title="Review queue">
+          <div className="space-y-1">
+            <HintLine action="New location" description="First report for a submitted place." />
+            <HintLine action="Error" description="A user disputes existing data." />
           </div>
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Update and confirm reports are auto-approved and won&apos;t appear
-            in Reports.
-          </p>
         </HintsSection>
 
         <HintsSection title="Report actions">
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
             <HintLine action="Approve" description="Stays live; leaves the queue." />
-            <HintLine action="Flag" description="Marks for review; opens a flag." />
-            <HintLine action="Restore" description="Clears the flag; returns to active." />
+            <HintLine action="Flag" description="Keeps it in review." />
             <HintLine action="Remove" description="Hides from the public map." />
           </div>
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            {REPUTATION_ADMIN_HINT}
-          </p>
         </HintsSection>
 
-        <HintsSection title="Flags & places">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <HintLine action="Resolve" description="The flagged issue is handled (all flags for that place)." />
-            <HintLine action="Dismiss" description="The flags weren't actionable (all flags for that place)." />
-            <HintLine
-              action="Places"
-              description="Look up by merchant name, postal code, or address — at least one is required."
-            />
+        <HintsSection title="Records">
+          <div className="space-y-1">
+            <HintLine action="Resolve" description="Issue handled; closes place flags." />
+            <HintLine action="Dismiss" description="No action; closes place flags." />
+            <HintLine action="Places" description="Find and maintain merchant records." />
             {isAdmin ? (
-              <HintLine
-                action="Users"
-                description="Look up a UUID to change role, suspend, or edit reputation."
-              />
+              <HintLine action="Users" description="Manage roles, status, and reputation." />
             ) : null}
           </div>
         </HintsSection>
+        </div>
       </CardContent>
     </Card>
   );
@@ -1336,25 +1318,6 @@ function HintsSection({
   );
 }
 
-function HintTile({
-  badge,
-  badgeVariant,
-  description,
-}: {
-  badge: string;
-  badgeVariant: "default" | "success" | "warning" | "danger" | "muted";
-  description: string;
-}) {
-  return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
-      <Badge variant={badgeVariant}>{badge}</Badge>
-      <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-        {description}
-      </p>
-    </div>
-  );
-}
-
 function HintLine({
   action,
   description,
@@ -1363,7 +1326,7 @@ function HintLine({
   description: string;
 }) {
   return (
-    <div className="rounded-lg px-3 py-2.5 text-sm leading-relaxed">
+    <div className="py-1.5 text-sm leading-relaxed">
       <span className="font-medium text-zinc-900 dark:text-zinc-100">{action}</span>
       <span className="text-zinc-500 dark:text-zinc-400"> — {description}</span>
     </div>
@@ -1372,7 +1335,7 @@ function HintLine({
 
 function AdminShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col overflow-hidden px-4 sm:px-6">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col overflow-hidden px-4 sm:px-6">
       {children}
     </div>
   );
@@ -1388,15 +1351,18 @@ function StatCard({
   className?: string;
 }) {
   return (
-    <Card className={className}>
-      <CardContent className="py-4">
-        <p className="text-sm text-zinc-500">{label}</p>
-        <p className="mt-1 text-3xl font-semibold">{value}</p>
-      </CardContent>
-    </Card>
+    <div className={cn("bg-white px-4 py-4 dark:bg-zinc-900", className)}>
+      <dt className="text-xs font-medium tracking-wide text-zinc-500 uppercase">{label}</dt>
+      <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</dd>
+    </div>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
-  return <p className="text-sm text-zinc-500">{message}</p>;
+  return (
+    <div className="rounded-xl border border-dashed border-zinc-300 px-5 py-10 text-center dark:border-zinc-700">
+      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Nothing here</p>
+      <p className="mt-1 text-sm text-zinc-500">{message}</p>
+    </div>
+  );
 }

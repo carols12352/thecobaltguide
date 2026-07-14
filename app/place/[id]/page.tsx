@@ -15,8 +15,8 @@ export default async function PlacePage({
   if (!place) notFound();
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link href="/">
+    <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+      <Link href="/map">
         <Button variant="ghost" size="sm" className="mb-4">
           ← Back to map
         </Button>
