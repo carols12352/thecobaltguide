@@ -22,7 +22,7 @@ as $$
       (select cp.id from public.card_products cp where cp.slug = 'amex-cobalt-ca' limit 1)
     )
   where p.status = 'active'
-    and p.location && extensions.st_makeenvelope(
+    and p.location operator(extensions.&&) extensions.st_makeenvelope(
       p_west, p_south, p_east, p_north, 4326
     )::extensions.geography
     and (p_category is null or p.category = p_category)
@@ -79,7 +79,7 @@ as $$
       (select cp.id from public.card_products cp where cp.slug = 'amex-cobalt-ca' limit 1)
     )
   where p.status = 'active'
-    and p.location && extensions.st_makeenvelope(
+    and p.location operator(extensions.&&) extensions.st_makeenvelope(
       p_west, p_south, p_east, p_north, 4326
     )::extensions.geography
     and (p_category is null or p.category = p_category)
@@ -153,7 +153,7 @@ as $$
       (select cp.id from public.card_products cp where cp.slug = 'amex-cobalt-ca' limit 1)
     )
   where p.status = 'active'
-    and p.location && extensions.st_makeenvelope(
+    and p.location operator(extensions.&&) extensions.st_makeenvelope(
       p_west, p_south, p_east, p_north, 4326
     )::extensions.geography
     and (p_category is null or p.category = p_category)
