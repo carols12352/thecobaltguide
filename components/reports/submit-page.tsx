@@ -215,7 +215,7 @@ export function SubmitReportPage() {
 
     if (data.possibleDuplicates?.length) {
       setDuplicateMessage(
-        "This merchant may already exist. Use the home page map to find it and submit a report.",
+        "This merchant may already exist. Use the map to find it and submit a report.",
       );
     }
   }
@@ -226,8 +226,8 @@ export function SubmitReportPage() {
         <h1 className="text-2xl font-bold">Add a New Merchant</h1>
         <p className="mt-1 text-zinc-600">
           Can&apos;t find a merchant on the{" "}
-          <Link href="/" className="font-medium text-cobalt-600 hover:underline">
-            home page map
+          <Link href="/map" className="font-medium text-cobalt-600 hover:underline">
+            map
           </Link>
           ? Add it here, then submit a multiplier report on its detail page.
         </p>

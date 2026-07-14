@@ -18,8 +18,9 @@ export function MapFiltersBar({ filters, onChange }: MapFiltersProps) {
   return (
     <div className="flex flex-wrap gap-3">
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-zinc-500">Multiplier</label>
+        <label htmlFor="map-multiplier-filter" className="text-xs font-medium text-zinc-500">Multiplier</label>
         <Select
+          id="map-multiplier-filter"
           value={filters.multiplier}
           onChange={(e) =>
             onChange({ ...filters, multiplier: e.target.value })
@@ -35,8 +36,9 @@ export function MapFiltersBar({ filters, onChange }: MapFiltersProps) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-zinc-500">Category</label>
+        <label htmlFor="map-category-filter" className="text-xs font-medium text-zinc-500">Category</label>
         <Select
+          id="map-category-filter"
           value={filters.category}
           onChange={(e) =>
             onChange({ ...filters, category: e.target.value })
