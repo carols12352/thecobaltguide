@@ -230,14 +230,20 @@ Configure these GitHub Actions secrets before enabling the workflow:
 - `VERCEL_PROJECT_ID`: the Vercel project ID
 
 The IDs are available in `.vercel/project.json` after running `vercel link`; the
-`.vercel` directory remains gitignored. The workflow pulls the Vercel Preview
-environment, builds inside GitHub Actions, and uploads the prebuilt output.
-Every push to `main` creates a Preview deployment and never updates Production.
+`.vercel` directory remains gitignored. The workflow uploads the source through
+Vercel CLI, then Vercel builds it inside the Preview environment so encrypted
+and sensitive project variables are available during build and at runtime.
+Opening a pull request targeting `main` creates one Preview deployment; later
+commits on that pull request do not redeploy it. Every direct push to `main`
+also creates one Preview deployment. Neither trigger updates Production. Pull
+requests from forks are skipped because GitHub does not expose deployment
+secrets to untrusted fork workflows.
 
 Create a GitHub Environment named `preview` if environment-level secrets or
-deployment protection are desired. Keep Vercel's
-automatic Git deployments disabled for this project when using this workflow,
-otherwise each push can create a duplicate deployment.
+deployment protection are desired. [`vercel.json`](vercel.json) disables
+Vercel's native Git deployments, leaving this GitHub Actions workflow as the
+only automatic Preview deployment path. The local `.vercel` project-linking
+directory remains ignored separately and must not be committed.
 
 ## Scripts
 

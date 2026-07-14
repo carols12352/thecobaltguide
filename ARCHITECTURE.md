@@ -58,7 +58,7 @@ Supabase
   └─ RLS
 ```
 
-The deployment target documented by the project is Vercel or another Node.js 22+ host. GitHub Actions deploys `main` only to the Vercel Preview environment. The `release` branch is excluded from automated deployment and currently contains the static Under Production shell for a separately managed production release. Cloudflare, PostHog, Resend, background workers, and Sentry are either optional configuration or unimplemented; they are not part of the guaranteed current architecture.
+The deployment target documented by the project is Vercel or another Node.js 22+ host. Native Vercel Git deployments are disabled in `vercel.json`; GitHub Actions is the only automatic deployment path and creates one Vercel Preview when a same-repository pull request is opened against `main`, and one for each direct push to `main`. Later commits on an already-open pull request do not redeploy it. The `release` branch is excluded from automated deployment and currently contains the static Under Production shell for a separately managed production release. Cloudflare, PostHog, Resend, background workers, and Sentry are either optional configuration or unimplemented; they are not part of the guaranteed current architecture.
 
 ### Request layering
 
