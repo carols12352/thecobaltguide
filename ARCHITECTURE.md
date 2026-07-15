@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture and Feature Readiness
 
-> Status: code and primary hosted-database assessment, verified 2026-07-14.
+> Status: code assessment updated 2026-07-15; primary hosted-database assessment last verified 2026-07-14.
 >
 > Source of truth: application code and `supabase/migrations/`; this document records the current implementation and the gates for adding product scope.
 
@@ -26,10 +26,10 @@ The product is technically ready for small, isolated UI and read-only improvemen
 | Server layer | About 3.9k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Automated tests | 222 unit tests across 39 Vitest files; 14 live RLS/grant tests via `npm run test:rls` |
+| Automated tests | 227 unit tests across 41 Vitest files; 16 live RLS/grant tests defined via `npm run test:rls` |
 | CI | lint, typecheck, unit tests, live local RLS tests, production build |
 | Integration/E2E tests | Live RLS matrix present; broader workflow/E2E coverage not present |
-| Production error monitoring | Not connected; the Sentry module is a stub |
+| Production error monitoring | Sentry server SDK, Next.js request-error hook, traces, and structured operational metrics are wired; production requires Sentry environment variables and alert configuration |
 | RLS lockdown | Corrective migrations `20260714120000`–`20260714170000` are applied and verified on the primary hosted project; they enforce explicit policies, grants, function ACLs, safe defaults, bounded public RPCs, and removal of unused legacy RPCs |
 
 These numbers are a point-in-time aid, not architectural targets.
@@ -135,13 +135,12 @@ The current report flow is synchronous:
 ```text
 authenticate and rate-limit
   → classify report
-  → insert report
-  → update report count/reputation
-  → recompute summary
+  → transactional RPC inserts the report, updates report count/reputation,
+    and recomputes the summary
   → invalidate public, account, and admin caches
 ```
 
-Deletion and moderation use similar multi-step flows. These operations are **not one database transaction**. A later step can fail after an earlier write has committed, leaving counters, summaries, review state, or audit data inconsistent. Place merging also performs multiple independent writes.
+Migration `20260715120000_transactional_write_workflows.sql` makes report submission/deletion, report moderation, place-flag resolution, and place merging atomic. It also keeps summary refresh, reputation changes, review metadata, and moderation audit rows in the same transaction. The RPCs are service-role-only; cache invalidation remains best-effort after commit. The migration must be applied to each hosted environment before the application code that calls these RPCs is deployed.
 
 Cache invalidation may remain best-effort after commit, but authoritative database changes that form one business action should become atomic.
 
@@ -166,24 +165,24 @@ This foundation is sufficient for continued development inside the monolith.
 
 Corrective migrations `20260714120000`–`20260714170000` remove permissive client INSERT/UPDATE paths and public raw profile/report SELECT, define least-privilege table and function grants, make future migration-created objects default-deny, bound public map RPC work, and remove unused legacy RPCs. Application mutations continue through the service-role client; public place report reads use the admin client in `report-repository.findByPlaceId` and return API projections only.
 
-The primary hosted Supabase project was verified through migration history, a read-only schema dump, and anonymous Data API smoke checks on 2026-07-14. Any additional environment must apply the same full migration chain. Run `npm run test:rls` only against a migrated local or disposable staging database because the suite creates and removes fixtures. Remaining Stage A work is transactional writes, observability, and geocode protection.
+The primary hosted Supabase project was verified through migration history, a read-only schema dump, and anonymous Data API smoke checks on 2026-07-14. Any additional environment must apply the same full migration chain. Run `npm run test:rls` only against a migrated local or disposable staging database because the suite creates and removes fixtures. The Stage A code is implemented; hosted rollout still requires applying `20260715120000`, configuring Sentry, and running deployment smoke checks.
 
 Previously, the initial migration permitted a signed-in user to update their own `profiles` row without limiting writable columns, and authenticated clients could insert places, reports, and flags directly—bypassing Route Handler checks for rate limits, reputation, classification, and cache/summary refresh.
 
 #### 6.2 Make authoritative multi-table actions atomic
 
-Move these workflows into transactional PostgreSQL functions or otherwise guarantee atomicity and idempotency:
+Implemented in service-role-only transactional PostgreSQL functions in `20260715120000_transactional_write_workflows.sql`:
 
 - submit/delete report plus profile counter/reputation changes;
 - approve/remove/flag report plus reputation and review metadata;
 - resolve a place's flags plus reporter reputation and report cleanup;
 - merge places plus report/flag reassignment, source status, summary, and audit log.
 
-Summary refresh can be included in the transaction at current volume. If it later becomes asynchronous, use a durable outbox/job record rather than an untracked fire-and-forget call.
+Summary refresh is included in the transaction at current volume. Repeated report approval does not apply reputation twice, and repeated flag resolution has no open rows to reward twice. If summary refresh later becomes asynchronous, use a durable outbox/job record rather than an untracked fire-and-forget call.
 
 #### 6.3 Connect real production observability
 
-`lib/monitoring/sentry.ts` currently logs only in development and contains commented Sentry calls. Before increasing product scope, production must provide at least:
+`@sentry/nextjs` is initialized through the Next.js instrumentation hook, and caught route errors use the shared capture helper. Structured logs and trace/metric breadcrumbs cover:
 
 - captured server exceptions with route and operation context;
 - API error rate and p95 latency;
@@ -191,7 +190,7 @@ Summary refresh can be included in the transaction at current volume. If it late
 - geocoding provider failures, timeouts, and usage;
 - report/flag mutation success and summary-refresh failures.
 
-No analytics vendor is mandatory. The requirement is actionable signals and alerts, not a specific tool.
+Set `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, and the CI source-map token in the deployment, then configure error-rate and p95 alerts in Sentry. Without a DSN, structured JSON logs remain available but external alerts do not.
 
 ### P1 — strengthen before medium-complexity features
 
@@ -208,7 +207,7 @@ Add a small Playwright suite for sign-in → submit → moderate → account-his
 
 #### 6.5 Protect third-party provider paths
 
-The geocode and reverse-geocode endpoints are public and currently have no route-level rate limit. Provider fetches do not have an explicit timeout/cancellation policy. Before adding more address-dependent features:
+The geocode and reverse-geocode endpoints now require an authenticated session, enforce per-IP and per-user hourly quotas, cache hashed forward/reverse queries for one hour, and apply four-second provider timeouts. Mapbox receives one bounded retry for server/network failures; Nominatim is not retried, and both paths retain provider fallback behavior. Provider duration, status, timeout, and failure metrics are emitted.
 
 - require an appropriate session where possible;
 - add IP/user quotas and short result caching;
@@ -280,9 +279,9 @@ Small read-only work does not need heavyweight design. The checklist scales with
 
 1. ~~Audit the deployed Supabase grants/RLS and add corrective migrations.~~ **Done** (`20260714120000`–`20260714170000`); the primary hosted project is applied and verified. Apply the full chain to any additional database and verify locally or in disposable staging with `npm run test:rls` (`supabase/tests/README.md`).
 2. ~~Add automated RLS tests before relying on application roles.~~ **Done** (local suite and dedicated CI job).
-3. Convert report and moderation write workflows to transactional database operations.
-4. Wire production exception reporting and basic latency/failure dashboards.
-5. Rate-limit and time-bound geocoding calls.
+3. ~~Convert report and moderation write workflows to transactional database operations.~~ **Implemented** in `20260715120000`; apply and run the 16-test live suite before deployment.
+4. ~~Wire production exception reporting and basic latency/failure telemetry.~~ **Implemented** with Sentry and structured metrics; deployment secrets and alert thresholds remain environment configuration.
+5. ~~Rate-limit and time-bound geocoding calls.~~ **Done** with authentication, dual quotas, hashed caching, provider timeouts/retry policy, fallback, and metrics.
 
 ### Stage B — maintainability
 
@@ -340,11 +339,11 @@ Future architecture changes should be added only when supported by code, an acce
 At the time of this assessment:
 
 ```text
-npm test          39 files, 222 tests passed
+npm test          41 files, 227 tests passed
 npm run typecheck passed
 npm run lint      passed
-npm run test:rls  1 file, 14 tests passed
+npm run test:rls  1 file, 16 tests defined; not rerun on 2026-07-15 because local Docker was unavailable
 npm run build     passed
 ```
 
-These checks validate the current TypeScript, unit-test, build, and local RLS baseline. The primary hosted project additionally passed migration-history/schema verification and read-only anonymous API smoke checks. This does not validate every future environment, multi-step transaction behavior, external providers, browser journeys, or production operations; remaining Stage A items close transactional writes, observability, and geocode protection.
+These checks validate the current TypeScript, unit-test, and build baseline. The 2026-07-14 primary hosted-project verification predates the new transactional migration. CI or a migrated disposable Supabase environment must run the expanded live suite before deployment. External Sentry alert configuration and provider behavior still require production verification.
