@@ -58,6 +58,7 @@ Users can browse and filter merchants, search by name, submit new locations, rep
 | Database and auth | Supabase, PostgreSQL, PostGIS, Row Level Security |
 | Validation | Zod |
 | Cache and rate limiting | Upstash Redis, with local in-memory rate-limit fallback |
+| Monitoring | Sentry server errors/traces plus structured operational logs |
 | Tests | Vitest |
 | Deployment target | Vercel or any Node.js 22+ host |
 
@@ -171,7 +172,7 @@ npx supabase link --project-ref your-project-ref
 npx supabase db push
 ```
 
-The migrations create the database tables, least-privilege RLS policies and grants, restricted function ACLs, bounded PostGIS functions and indexes, the default Amex Cobalt card product, report aggregation support, moderation fields, and optimized viewport queries. The Stage A security chain is `20260714120000`–`20260714170000`. See [`supabase/migrations/README.md`](supabase/migrations/README.md) for migration ownership, local/hosted workflows, deployment, and drift-repair rules.
+The migrations create the database tables, least-privilege RLS policies and grants, restricted function ACLs, bounded PostGIS functions and indexes, the default Amex Cobalt card product, report aggregation support, moderation fields, optimized viewport queries, and transactional report/moderation workflows. The Stage A security chain is `20260714120000`–`20260715120000`. See [`supabase/migrations/README.md`](supabase/migrations/README.md) for migration ownership, local/hosted workflows, deployment, and drift-repair rules.
 
 For a fully local Supabase stack, install the Supabase CLI and Docker, then run:
 
@@ -396,14 +397,14 @@ __tests__/            Vitest unit and integration-style tests
 
 ## Production checklist
 
-1. Apply all Supabase migrations and confirm migration history through `20260714170000`.
+1. Apply all Supabase migrations and confirm migration history through `20260715120000`.
 2. Set production Supabase, application URL, and map environment variables.
 3. Configure production auth callback URLs and email delivery.
 4. Configure both Upstash read and write tokens.
 5. Keep `SUPABASE_SECRET_KEY` server-only.
 6. Run lint, typecheck, tests, and the production build.
-7. Verify map API `Server-Timing` values and Redis hit behaviour.
-8. Replace the monitoring stub in `lib/monitoring/sentry.ts` with a real provider if production error reporting is required.
+7. Verify map API `Server-Timing`, Redis hit/miss metrics, and authenticated geocode quotas/fallbacks.
+8. Configure Sentry DSN, organization/project, source-map token, and production error-rate/p95 alerts.
 
 ## Data attribution
 

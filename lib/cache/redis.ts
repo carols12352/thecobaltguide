@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { recordMetric } from "@/lib/monitoring/sentry";
 
 let redisReadClient: Redis | null | undefined;
 let redisWriteClient: Redis | null | undefined;
@@ -59,12 +60,20 @@ function logRedisError(op: string, error: unknown): void {
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const redis = getRedisRead();
-  if (!redis) return null;
+  if (!redis) {
+    recordMetric("redis.cache.request", 1, { result: "disabled" });
+    return null;
+  }
 
   try {
-    return (await redis.get<T>(key)) ?? null;
+    const value = (await redis.get<T>(key)) ?? null;
+    recordMetric("redis.cache.request", 1, {
+      result: value === null ? "miss" : "hit",
+    });
+    return value;
   } catch (error) {
     logRedisError(`GET ${key}`, error);
+    recordMetric("redis.cache.request", 1, { result: "error" });
     return null;
   }
 }

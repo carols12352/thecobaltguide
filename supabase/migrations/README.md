@@ -99,5 +99,5 @@ Never rewrite an applied migration merely to make local files resemble remote
 state. Migration timestamps are deployment history; corrections belong in a new
 migration so existing and fresh databases converge on the same result.
 
-The Stage A RLS and privilege hardening is recorded in migrations
-`20260714120000` through `20260714170000`.
+The Stage A RLS/privilege hardening and transactional write boundary are
+recorded in migrations `20260714120000` through `20260715120000`.

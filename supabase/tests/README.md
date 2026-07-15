@@ -1,7 +1,7 @@
 # Database / RLS tests
 
 These tests verify Row Level Security, table grants, and function ACLs after the
-Stage A corrective migration chain (`20260714120000`–`20260714170000`).
+Stage A corrective migration chain (`20260714120000`–`20260715120000`).
 
 They require a running local Supabase with migrations applied. They are separate
 from the default `npm test` suite and run in the CI `rls-tests` job.
@@ -45,5 +45,6 @@ suite from combining credentials from different projects.
 | authenticated user | Read own profile / reports / flags; cannot escalate role/status/reputation; cannot insert places/reports/flags; cannot write moderation_logs |
 | moderator/admin JWT | No extra table policies; still cannot write moderation_logs without service role |
 
-The 14-test suite also verifies inactive-row filtering, bounded public map RPC
-behavior, catalogue/summary write denial, and service-only auth lookup isolation.
+The 16-test suite also verifies inactive-row filtering, bounded public map RPC
+behavior, catalogue/summary write denial, service-only auth lookup isolation,
+and denial of direct access to transactional write RPCs.

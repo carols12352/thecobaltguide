@@ -370,6 +370,29 @@ describe("RLS lockdown matrix", () => {
       expect(result.data).toBeNull();
     });
 
+    it("cannot execute transactional write RPCs", async () => {
+      const anon = anonClient();
+      const submit = await anon.rpc("submit_report_transactional", {
+        p_place_id: fixture.placeId,
+        p_user_id: fixture.userAId,
+        p_card_product_id: fixture.cardProductId,
+        p_multiplier: "5",
+        p_transaction_date: "2026-07-04",
+        p_payment_context: "in_store",
+        p_notes: null,
+        p_report_kind: "update",
+      });
+      expect(submit.error?.code).toBe("42501");
+
+      const merge = await anon.rpc("merge_places_transactional", {
+        p_source_place_id: fixture.inactivePlaceId,
+        p_target_place_id: fixture.placeId,
+        p_moderator_id: fixture.modId,
+        p_reason: "must not run",
+      });
+      expect(merge.error?.code).toBe("42501");
+    });
+
     it("cannot insert places, reports, or flags", async () => {
       const anon = anonClient();
 
@@ -488,6 +511,15 @@ describe("RLS lockdown matrix", () => {
       });
       expect(result.error).toBeTruthy();
       expect(result.data).toBeNull();
+    });
+
+    it("cannot bypass the API through transactional write RPCs", async () => {
+      const userA = await userClient(emails.a);
+      const result = await userA.rpc("delete_own_report_transactional", {
+        p_report_id: fixture.reportId,
+        p_user_id: fixture.userAId,
+      });
+      expect(result.error?.code).toBe("42501");
     });
 
     it("cannot insert places, reports, or flags via client JWT", async () => {
