@@ -10,9 +10,10 @@ import {
   invalidateUserAccountCaches,
   setCachedUserAccountReports,
 } from "@/lib/cache/user-account-cache";
-import { summaryService } from "@/server/services/summary-service";
 import { reputationService } from "@/server/services/reputation-service";
 import { ReportPlaceDailyLimitError } from "@/server/services/report-errors";
+import { transactionRepository } from "@/server/repositories/transaction-repository";
+import { ReputationBlockedError } from "@/server/services/reputation-service";
 import type { CreateReportInput } from "@/server/validation/schemas";
 import type { ReportKind } from "@/types/domain";
 
@@ -76,17 +77,25 @@ export class ReportService {
       }
     }
 
-    const report = await reportRepository.create(
-      placeId,
-      userId,
-      cardProductId,
-      input,
-      reportKind,
-    );
-
-    await reputationService.onReportSubmitted(userId, reportKind);
-
-    await summaryService.refreshPlaceSummary(placeId, cardProductId);
+    let report;
+    try {
+      report = await transactionRepository.submitReport(
+        placeId,
+        userId,
+        cardProductId,
+        input,
+        reportKind,
+      );
+    } catch (error) {
+      const databaseError = error as { code?: string; message?: string };
+      if (databaseError.code === "23505") {
+        throw new ReportPlaceDailyLimitError();
+      }
+      if (databaseError.message?.includes("REPUTATION_BLOCKED")) {
+        throw new ReputationBlockedError();
+      }
+      throw error;
+    }
     await invalidatePlaceReadCaches(placeId);
     await invalidateUserAccountCaches(userId);
     if (reportKind === "new_location" || reportKind === "error") {
@@ -144,9 +153,7 @@ export class ReportService {
       throw new Error("Report cannot be removed");
     }
 
-    const report = await reportRepository.softDelete(reportId, userId);
-    await reputationService.onOwnReportDeleted(userId, existing.reportKind);
-    await summaryService.refreshPlaceSummary(report.placeId, report.cardProductId);
+    const report = await transactionRepository.deleteOwnReport(reportId, userId);
     await invalidatePlaceReadCaches(report.placeId);
     await invalidateUserAccountCaches(userId);
     await invalidateAdminCaches();
