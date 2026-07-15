@@ -17,6 +17,14 @@ export const RATE_LIMITS = {
   /** Minimum seconds between any two report submissions from the same account. */
   minSecondsBetweenUserReports: 60,
   oneReportPerPlacePerDay: true,
+  maxGeocodeRequestsPerIpPerHour: 120,
+  maxGeocodeRequestsPerUserPerHour: 60,
+} as const;
+
+export const GEOCODING_PROVIDER_POLICY = {
+  timeoutMs: 4_000,
+  mapboxRetries: 1,
+  nominatimRetries: 0,
 } as const;
 
 export const MAP_DEFAULTS = {
@@ -51,6 +59,8 @@ export const CACHE_DURATIONS = {
   adminPlaceDetailSeconds: 120,
   /** Per-user account reports/flags lists on /account. */
   userAccountListSeconds: 120,
+  /** Forward and reverse provider results; keys are SHA-256 hashes. */
+  geocodeSeconds: 3600,
 } as const;
 
 /** CDN edge cache TTLs — short so Redis version bumps propagate quickly. */

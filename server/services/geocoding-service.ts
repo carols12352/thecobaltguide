@@ -28,6 +28,8 @@ import {
   rankGeocodeResults,
   resolveGeocodeAddressLine1,
 } from "@/lib/geocoding/parse-result";
+import { GEOCODING_PROVIDER_POLICY } from "@/config/constants";
+import { recordMetric } from "@/lib/monitoring/sentry";
 
 export type GeocodeSource = "address" | "postal";
 
@@ -52,6 +54,58 @@ type StructuredGeocodeInput = {
   province?: string;
   postalCode?: string;
 };
+
+type GeocodeProvider = "mapbox" | "nominatim";
+
+async function fetchProvider(
+  provider: GeocodeProvider,
+  operation: string,
+  input: string | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const retries =
+    provider === "mapbox"
+      ? GEOCODING_PROVIDER_POLICY.mapboxRetries
+      : GEOCODING_PROVIDER_POLICY.nominatimRetries;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const startedAt = performance.now();
+    try {
+      const response = await fetch(input, {
+        ...init,
+        signal: AbortSignal.timeout(GEOCODING_PROVIDER_POLICY.timeoutMs),
+      });
+      recordMetric("geocoding.provider.duration_ms", performance.now() - startedAt, {
+        provider,
+        operation,
+        status: response.status,
+        attempt,
+      });
+      if (!response.ok) {
+        recordMetric("geocoding.provider.failure", 1, {
+          provider,
+          operation,
+          reason: "http",
+          status: response.status,
+          attempt,
+        });
+      }
+      if (response.ok || response.status < 500) return response;
+      lastError = new Error(`${provider} ${operation} failed: ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      recordMetric("geocoding.provider.failure", 1, {
+        provider,
+        operation,
+        reason: error instanceof Error && error.name === "TimeoutError" ? "timeout" : "network",
+        attempt,
+      });
+    }
+  }
+
+  throw lastError ?? new Error(`${provider} ${operation} failed`);
+}
 
 export class GeocodingService {
   async searchAddress(query: string): Promise<GeocodingResult[]> {
@@ -518,7 +572,7 @@ export class GeocodingService {
       url.searchParams.set("proximity", `${longitude},${latitude}`);
       url.searchParams.set("limit", "10");
 
-      const response = await fetch(url.toString());
+      const response = await fetchProvider("mapbox", "nearby-address", url);
       if (!response.ok) return [];
 
       const data = await response.json();
@@ -599,7 +653,7 @@ export class GeocodingService {
     url.searchParams.set("types", types);
     url.searchParams.set("limit", "10");
 
-    const response = await fetch(url.toString());
+    const response = await fetchProvider("mapbox", "reverse", url);
     if (!response.ok) {
       throw new Error(`Reverse geocoding request failed: ${response.status}`);
     }
@@ -629,7 +683,7 @@ export class GeocodingService {
     url.searchParams.set("format", "json");
     url.searchParams.set("addressdetails", "1");
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchProvider("nominatim", "reverse", url, {
       headers: {
         "User-Agent": "CobaltMerchantMap/1.0 (merchant submit geocoding)",
       },
@@ -739,7 +793,7 @@ export class GeocodingService {
       proximity,
     });
 
-    const response = await fetch(url);
+    const response = await fetchProvider("mapbox", "search-box", url);
     if (!response.ok) {
       throw new Error(`Search Box request failed: ${response.status}`);
     }
@@ -775,7 +829,7 @@ export class GeocodingService {
       proximity,
     });
 
-    const response = await fetch(url);
+    const response = await fetchProvider("mapbox", "forward", url);
     if (!response.ok) {
       throw new Error(`Geocoding request failed: ${response.status}`);
     }
@@ -812,7 +866,7 @@ export class GeocodingService {
       url.searchParams.set("bounded", "1");
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchProvider("nominatim", "forward", url, {
       headers: {
         "User-Agent": "CobaltMerchantMap/1.0 (merchant submit geocoding)",
       },

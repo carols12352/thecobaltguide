@@ -123,6 +123,22 @@ export async function checkUserPlaceRateLimit(userId: string) {
   );
 }
 
+export async function checkGeocodeIpRateLimit(ip: string) {
+  return checkRateLimit(
+    `geocode-ip:${ip}`,
+    RATE_LIMITS.maxGeocodeRequestsPerIpPerHour,
+    60 * 60 * 1000,
+  );
+}
+
+export async function checkGeocodeUserRateLimit(userId: string) {
+  return checkRateLimit(
+    `geocode-user:${userId}`,
+    RATE_LIMITS.maxGeocodeRequestsPerUserPerHour,
+    60 * 60 * 1000,
+  );
+}
+
 export function getClientIp(request: Request): string {
   return (
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
