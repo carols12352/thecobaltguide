@@ -3,7 +3,9 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
-  retries: process.env.CI ? 2 : 0,
+  // This suite mutates persistent state and cannot safely replay the same
+  // fixture identities after a partial success.
+  retries: 0,
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never" }]]
     : "list",

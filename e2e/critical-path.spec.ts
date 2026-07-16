@@ -54,7 +54,7 @@ test("sign in → submit → moderate → account history", async ({ browser }) 
 
   await user.page.goto("/account");
   await user.page.getByRole("button", { name: "archive" }).first().click();
-  await expect(user.page.getByText("Reviewed")).toBeVisible();
+  await expect(user.page.getByText("Reviewed", { exact: true })).toBeVisible();
   await user.context.close();
   await moderator.context.close();
 });
