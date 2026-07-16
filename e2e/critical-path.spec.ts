@@ -20,41 +20,56 @@ async function signIn(browser: Browser, email: string, password: string) {
 }
 
 test("sign in → submit → moderate → account history", async ({ browser }) => {
+  // `next dev` compiles each page and Route Handler on first use in CI. The
+  // complete two-session workflow needs more than Playwright's 30s default on
+  // a cold runner even when every individual operation succeeds.
+  test.setTimeout(60_000);
+
   test.skip(
     !fixture.userEmail || !fixture.userPassword || !fixture.moderatorEmail
       || !fixture.moderatorPassword || !fixture.placeId,
     "Set the E2E_* fixture variables documented in README.md",
   );
 
-  const user = await signIn(browser, fixture.userEmail!, fixture.userPassword!);
-  const submitted = await user.context.request.post(
-    `/api/places/${fixture.placeId}/reports`,
-    {
-      data: {
-        multiplier: 5,
-        transactionDate: new Date().toISOString().slice(0, 10),
-        paymentContext: "in_store",
-        intent: "error",
+  const user = await test.step("sign in as the reporting user", () =>
+    signIn(browser, fixture.userEmail!, fixture.userPassword!),
+  );
+  const report = await test.step("submit a report for moderation", async () => {
+    const submitted = await user.context.request.post(
+      `/api/places/${fixture.placeId}/reports`,
+      {
+        data: {
+          multiplier: 5,
+          transactionDate: new Date().toISOString().slice(0, 10),
+          paymentContext: "in_store",
+          intent: "error",
+        },
       },
-    },
-  );
-  expect(submitted.status()).toBe(201);
-  const { report } = await submitted.json() as { report: { id: string } };
+    );
+    expect(submitted.status()).toBe(201);
+    return (await submitted.json() as { report: { id: string } }).report;
+  });
 
-  const moderator = await signIn(
-    browser,
-    fixture.moderatorEmail!,
-    fixture.moderatorPassword!,
+  const moderator = await test.step("sign in as the moderator", () =>
+    signIn(
+      browser,
+      fixture.moderatorEmail!,
+      fixture.moderatorPassword!,
+    ),
   );
-  const moderated = await moderator.context.request.patch(
-    `/api/admin/reports/${report.id}`,
-    { data: { approve: true } },
-  );
-  expect(moderated.ok()).toBe(true);
+  await test.step("approve the submitted report", async () => {
+    const moderated = await moderator.context.request.patch(
+      `/api/admin/reports/${report.id}`,
+      { data: { approve: true } },
+    );
+    expect(moderated.ok()).toBe(true);
+  });
 
-  await user.page.goto("/account");
-  await user.page.getByRole("button", { name: "archive" }).first().click();
-  await expect(user.page.getByText("Reviewed", { exact: true })).toBeVisible();
+  await test.step("show the reviewed report in account history", async () => {
+    await user.page.goto("/account");
+    await user.page.getByRole("button", { name: "archive" }).first().click();
+    await expect(user.page.getByText("Reviewed", { exact: true })).toBeVisible();
+  });
   await user.context.close();
   await moderator.context.close();
 });
