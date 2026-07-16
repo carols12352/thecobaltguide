@@ -47,6 +47,24 @@ async function validateBaseUrl(value) {
 
 const validatedBaseUrl = await validateBaseUrl(baseUrl);
 
+function vercelBypassHeaders(url) {
+  const secret = process.env.BASELINE_VERCEL_BYPASS_SECRET?.trim();
+  if (!secret) return {};
+
+  const prefix = process.env.BASELINE_VERCEL_HOST_PREFIX?.trim().toLowerCase();
+  const suffix = process.env.BASELINE_VERCEL_HOST_SUFFIX?.trim().toLowerCase();
+  if (!prefix || !suffix) {
+    throw new Error("Vercel bypass host boundaries must be configured with the bypass secret");
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  if (!hostname.startsWith(prefix) || !hostname.endsWith(suffix)) return {};
+
+  return { "x-vercel-protection-bypass": secret };
+}
+
+const requestHeaders = vercelBypassHeaders(validatedBaseUrl);
+
 const samples = Number(process.env.BASELINE_SAMPLES ?? 20);
 if (!Number.isInteger(samples) || samples < 5 || samples > 100) {
   throw new Error("BASELINE_SAMPLES must be an integer between 5 and 100");
@@ -65,6 +83,7 @@ for (const path of paths) {
     const startedAt = performance.now();
     const response = await fetch(new URL(path, validatedBaseUrl), {
       cache: "no-store",
+      headers: requestHeaders,
       redirect: "error",
     });
     durations.push(performance.now() - startedAt);

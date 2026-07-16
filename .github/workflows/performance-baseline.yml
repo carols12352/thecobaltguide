@@ -18,7 +18,7 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: performance-baseline-${{ github.event.issue.number || github.run_id }}
@@ -59,7 +59,13 @@ jobs:
         env:
           BASELINE_BASE_URL: ${{ steps.request.outputs.base_url }}
           BASELINE_SAMPLES: ${{ steps.request.outputs.samples }}
-        run: node scripts/measure-api-baseline.mjs | tee performance-baseline.jsonl
+          BASELINE_VERCEL_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          BASELINE_VERCEL_HOST_PREFIX: thecobaltguide-
+          BASELINE_VERCEL_HOST_SUFFIX: -sichengs-projects-7a455dbc.vercel.app
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/measure-api-baseline.mjs | tee performance-baseline.jsonl
 
       - name: Write job summary
         if: ${{ always() }}

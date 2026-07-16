@@ -49,3 +49,8 @@ for 14 days. The target may use any public HTTP(S) host; it is not restricted to
 Vercel. For runner security, credentials, redirects, localhost, private IPs,
 link-local addresses, and non-routable targets are rejected. Local measurements
 can opt in explicitly with `BASELINE_ALLOW_PRIVATE_NETWORK=true`.
+
+Protected Cobalt Guide Vercel previews may use the repository's
+`VERCEL_AUTOMATION_BYPASS_SECRET`. The workflow only attaches that secret when
+the target hostname matches this project's generated Vercel deployment
+namespace; arbitrary public targets never receive it. Redirects remain blocked.
