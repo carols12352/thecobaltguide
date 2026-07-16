@@ -2,6 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  AdminHintsCard,
+  AdminShell,
+  AdminUserCard,
+  EmptyState,
+  StatCard,
+} from "@/components/admin/admin-dashboard-parts";
+import {
+  ADMIN_TABS,
+  PAYMENT_CONTEXT_LABELS,
+  formatAdminDate,
+  placeStatusVariant,
+  reportStatusVariant,
+  type AdminPlace,
+  type AdminReport,
+  type AdminSession,
+  type AdminTab,
+  type AdminUser,
+  type AdminUserUpdate,
+} from "@/components/admin/admin-dashboard-model";
 import { PlacesPagination, PLACES_PAGE_SIZE } from "@/components/admin/places-pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,69 +42,6 @@ import { formatCanadianPostalCodeInput } from "@/lib/validation/canadian-postal-
 import type { AdminFlagGroup } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
-type AdminTab = "overview" | "reports" | "flags" | "places" | "users";
-
-interface AdminSession {
-  id: string;
-  email: string | null;
-  username: string | null;
-  role: "user" | "moderator" | "admin";
-}
-
-interface AdminReport {
-  id: string;
-  multiplier: string;
-  transaction_date: string;
-  payment_context: string;
-  notes: string | null;
-  status: "active" | "removed" | "flagged";
-  report_kind: "new_location" | "error" | "update" | "confirm";
-  moderation_reason: string | null;
-  reviewed_at: string | null;
-  created_at: string;
-  place_id: string;
-  places: { id: string; name: string; city: string; province: string } | null;
-  reporter: { id: string; username: string | null } | null;
-}
-
-interface AdminPlace {
-  id: string;
-  name: string;
-  address_line1: string | null;
-  city: string;
-  province: string;
-  postal_code: string | null;
-  category: string;
-  status: "active" | "permanently_closed" | "merged";
-  created_at: string;
-}
-
-interface AdminUser {
-  id: string;
-  username: string | null;
-  role: "user" | "moderator" | "admin";
-  status: "active" | "suspended";
-  report_count: number;
-  reputation_score: number;
-  created_at: string;
-}
-
-const PAYMENT_CONTEXT_LABELS: Record<string, string> = {
-  in_store: "In store",
-  online: "Online",
-  gas_pump: "Gas pump",
-  delivery: "Delivery",
-  other: "Other",
-};
-
-const TABS: { id: AdminTab; label: string; adminOnly?: boolean }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "reports", label: "Reports" },
-  { id: "flags", label: "Flags" },
-  { id: "places", label: "Places" },
-  { id: "users", label: "Users", adminOnly: true },
-];
-
 const ADMIN_HINTS_DISMISSED_KEY = "cobalt-admin-hints-dismissed";
 const adminFetch: RequestInit = { cache: "no-store" };
 
@@ -95,30 +52,6 @@ function readAdminHintsDismissed() {
   } catch {
     return false;
   }
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function reportStatusVariant(
-  status: AdminReport["status"],
-): "success" | "warning" | "danger" | "muted" {
-  if (status === "active") return "success";
-  if (status === "flagged") return "warning";
-  return "muted";
-}
-
-function placeStatusVariant(
-  status: AdminPlace["status"],
-): "success" | "warning" | "muted" {
-  if (status === "active") return "success";
-  if (status === "permanently_closed") return "warning";
-  return "muted";
 }
 
 export function AdminDashboard() {
@@ -157,7 +90,7 @@ export function AdminDashboard() {
 
   const isAdmin = session?.role === "admin";
   const visibleTabs = useMemo(
-    () => TABS.filter((item) => !item.adminOnly || isAdmin),
+    () => ADMIN_TABS.filter((item) => !item.adminOnly || isAdmin),
     [isAdmin],
   );
 
@@ -437,11 +370,7 @@ export function AdminDashboard() {
 
   async function patchUser(
     id: string,
-    updates: {
-      role?: AdminUser["role"];
-      status?: AdminUser["status"];
-      reputationScore?: number;
-    },
+    updates: AdminUserUpdate,
   ): Promise<AdminUser | null> {
     setActionError(null);
     const res = await fetch(`/api/admin/users/${id}`, {
@@ -614,8 +543,9 @@ export function AdminDashboard() {
                   <p className="text-sm text-zinc-600">
                     {report.places?.city}, {report.places?.province} ·{" "}
                     {PAYMENT_CONTEXT_LABELS[report.payment_context] ??
-                      report.payment_context}{" "}
-                    · {formatDate(report.transaction_date)}
+                      report.payment_context}
+                    {" · "}
+                    {formatAdminDate(report.transaction_date)}
                   </p>
                   <p className="text-xs text-zinc-500">
                     Reporter: {report.reporter?.username ?? "unknown"}
@@ -625,7 +555,7 @@ export function AdminDashboard() {
                         <span className="font-mono">{report.reporter.id}</span>
                       </>
                     ) : null}{" · "}
-                    Submitted {formatDate(report.created_at)}
+                    Submitted {formatAdminDate(report.created_at)}
                   </p>
                   {report.notes ? (
                     <p className="text-sm text-zinc-600">{report.notes}</p>
@@ -734,7 +664,7 @@ export function AdminDashboard() {
                             </span>
                           </>
                         ) : null}{" "}
-                        · {formatDate(flag.createdAt)}
+                        · {formatAdminDate(flag.createdAt)}
                       </p>
                       {flag.details ? (
                         <p className="mt-1 text-zinc-700 dark:text-zinc-300">
@@ -1097,272 +1027,5 @@ export function AdminDashboard() {
         </div>
       ) : null}
     </AdminShell>
-  );
-}
-
-function AdminUserCard({
-  user,
-  currentUserId,
-  onUpdate,
-  onPatch,
-}: {
-  user: AdminUser;
-  currentUserId?: string;
-  onUpdate: (user: AdminUser) => void;
-  onPatch: (
-    id: string,
-    updates: {
-      role?: AdminUser["role"];
-      status?: AdminUser["status"];
-      reputationScore?: number;
-    },
-  ) => Promise<AdminUser | null>;
-}) {
-  const isSelf = user.id === currentUserId;
-  const [reputationDraft, setReputationDraft] = useState({
-    sourceScore: user.reputation_score,
-    value: String(user.reputation_score),
-  });
-  const [savingReputation, setSavingReputation] = useState(false);
-  const reputationDraftValue =
-    reputationDraft.sourceScore === user.reputation_score
-      ? reputationDraft.value
-      : String(user.reputation_score);
-
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium">{user.username ?? "Unnamed user"}</p>
-            <Badge variant={user.status === "active" ? "success" : "danger"}>
-              {user.status}
-            </Badge>
-            <Badge variant="muted">{user.role}</Badge>
-            {isSelf ? <Badge variant="default">You</Badge> : null}
-          </div>
-          <p className="font-mono text-xs text-zinc-500 break-all">{user.id}</p>
-          <p className="text-sm text-zinc-600">
-            {user.report_count} reports · reputation {user.reputation_score}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="space-y-1">
-            <Label htmlFor={`rep-${user.id}`} className="text-xs">
-              Reputation
-            </Label>
-            <Input
-              id={`rep-${user.id}`}
-              type="number"
-              className="w-28"
-              value={reputationDraftValue}
-              onChange={(e) => setReputationDraft({
-                sourceScore: user.reputation_score,
-                value: e.target.value,
-              })}
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={savingReputation}
-            onClick={async () => {
-              const parsed = Number.parseInt(reputationDraftValue, 10);
-              if (Number.isNaN(parsed)) return;
-              setSavingReputation(true);
-              const updated = await onPatch(user.id, { reputationScore: parsed });
-              setSavingReputation(false);
-              if (updated) {
-                onUpdate(updated);
-                setReputationDraft({
-                  sourceScore: updated.reputation_score,
-                  value: String(updated.reputation_score),
-                });
-              }
-            }}
-          >
-            {savingReputation ? "Saving…" : "Save rep"}
-          </Button>
-          <Select
-            value={user.role}
-            disabled={isSelf}
-            onChange={async (e) => {
-              const updated = await onPatch(user.id, {
-                role: e.target.value as AdminUser["role"],
-              });
-              if (updated) onUpdate(updated);
-            }}
-          >
-            <option value="user">User</option>
-            <option value="moderator">Moderator</option>
-            <option value="admin">Admin</option>
-          </Select>
-          {user.status === "active" ? (
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={isSelf}
-              onClick={async () => {
-                const updated = await onPatch(user.id, { status: "suspended" });
-                if (updated) onUpdate(updated);
-              }}
-            >
-              Suspend
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                const updated = await onPatch(user.id, { status: "active" });
-                if (updated) onUpdate(updated);
-              }}
-            >
-              Reactivate
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function AdminHintsCard({
-  isAdmin,
-  onDismiss,
-}: {
-  isAdmin: boolean;
-  onDismiss: () => void;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Moderation guide
-          </h2>
-          <p className="max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            New-location and error reports enter the review queue. Routine confirmations publish automatically.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          aria-label="Dismiss admin hints"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M4 4l8 8M12 4l-8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </CardHeader>
-
-      <CardContent>
-        <div className="grid gap-8 md:grid-cols-3">
-        <HintsSection title="Review queue">
-          <div className="space-y-1">
-            <HintLine action="New location" description="First report for a submitted place." />
-            <HintLine action="Error" description="A user disputes existing data." />
-          </div>
-        </HintsSection>
-
-        <HintsSection title="Report actions">
-          <div className="space-y-1">
-            <HintLine action="Approve" description="Stays live; leaves the queue." />
-            <HintLine action="Flag" description="Keeps it in review." />
-            <HintLine action="Remove" description="Hides from the public map." />
-          </div>
-        </HintsSection>
-
-        <HintsSection title="Records">
-          <div className="space-y-1">
-            <HintLine action="Resolve" description="Issue handled; closes place flags." />
-            <HintLine action="Dismiss" description="No action; closes place flags." />
-            <HintLine action="Places" description="Find and maintain merchant records." />
-            {isAdmin ? (
-              <HintLine action="Users" description="Manage roles, status, and reputation." />
-            ) : null}
-          </div>
-        </HintsSection>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function HintsSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-        {title}
-      </h3>
-      <div className="mt-3">{children}</div>
-    </section>
-  );
-}
-
-function HintLine({
-  action,
-  description,
-}: {
-  action: string;
-  description: string;
-}) {
-  return (
-    <div className="py-1.5 text-sm leading-relaxed">
-      <span className="font-medium text-zinc-900 dark:text-zinc-100">{action}</span>
-      <span className="text-zinc-500 dark:text-zinc-400"> — {description}</span>
-    </div>
-  );
-}
-
-function AdminShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col overflow-hidden px-4 sm:px-6">
-      {children}
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  className,
-}: {
-  label: string;
-  value: number;
-  className?: string;
-}) {
-  return (
-    <div className={cn("bg-white px-4 py-4 dark:bg-zinc-900", className)}>
-      <dt className="text-xs font-medium tracking-wide text-zinc-500 uppercase">{label}</dt>
-      <dd className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</dd>
-    </div>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-zinc-300 px-5 py-10 text-center dark:border-zinc-700">
-      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Nothing here</p>
-      <p className="mt-1 text-sm text-zinc-500">{message}</p>
-    </div>
   );
 }
