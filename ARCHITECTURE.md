@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture and Feature Readiness
 
-> Status: code assessment updated 2026-07-15; primary hosted-database assessment last verified 2026-07-14.
+> Status: code assessment and Stage B implementation updated 2026-07-16; primary hosted-database assessment last verified 2026-07-14.
 >
 > Source of truth: application code and `supabase/migrations/`; this document records the current implementation and the gates for adding product scope.
 
@@ -26,9 +26,9 @@ The product is technically ready for small, isolated UI and read-only improvemen
 | Server layer | About 3.9k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Automated tests | See the verified baseline in [Section 12](#12-verification-baseline); 16 live RLS/grant tests are defined via `npm run test:rls` |
-| CI | lint, typecheck, unit tests, live local RLS tests, production build |
-| Integration/E2E tests | Live RLS matrix present; broader workflow/E2E coverage not present |
+| Automated tests | See the verified baseline in [Section 12](#12-verification-baseline); 16 live RLS/grant and 3 transactional tests are defined |
+| CI | Core CI runs lint, typecheck, unit tests, and build; separate workflows run live local RLS/transaction tests, Playwright E2E, and maintainer-triggered performance baselines |
+| Integration/E2E tests | Live RLS matrix, transactional report workflow integration tests, and an environment-backed Playwright critical path are present |
 | Production error monitoring | Sentry server SDK, Next.js request-error hook, traces, and structured operational metrics are wired; production requires Sentry environment variables and alert configuration |
 | RLS lockdown | Corrective migrations `20260714120000`–`20260714170000` are applied and verified on the primary hosted project; they enforce explicit policies, grants, function ACLs, safe defaults, bounded public RPCs, and removal of unused legacy RPCs |
 
@@ -71,7 +71,7 @@ app/api/*/route.ts
         → Supabase
 ```
 
-This boundary is useful but not yet strict. `summary-service.ts` and parts of `moderation-service.ts` use the admin Supabase client directly. That is manageable in a single service, but new database access should normally be placed in a repository or a transactional database RPC.
+This boundary is enforced for newly touched mutation code. Geocoding provider HTTP access lives in `server/geocoding/provider-client.ts`; place and moderation writes live in focused repositories. `summary-service.ts` retains one direct admin-client query and should move when that workflow is next changed.
 
 ## 3. Implemented product modules
 
@@ -223,14 +223,16 @@ Set `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, and the CI source-map token in
 
 #### 6.4 Extend integration and critical-path E2E coverage
 
-The live local Supabase suite already reapplies the full migration chain and verifies RLS, table grants, function ACLs, inactive-row filtering, and bounded public RPC behavior. Broader integration coverage should still verify:
+The live local Supabase suite reapplies the full migration chain and verifies RLS, table grants, function ACLs, inactive-row filtering, and bounded public RPC behavior. Stage B adds a transactional integration suite for report insert/delete, profile and summary consistency, and duplicate-submission conflicts. The opt-in Playwright suite covers sign-in → submit → moderate → account-history using isolated fixture accounts.
+
+Remaining workflow expansion should verify:
 
 - report submission, classification, aggregation, deletion, and moderation;
 - duplicate-place prevention and place merge rollback behavior;
 - PostGIS viewport boundaries and pagination;
 - cache invalidation after committed mutations.
 
-Add a small Playwright suite for sign-in → submit → moderate → account-history. Broad browser coverage is unnecessary; protect the highest-risk journeys.
+The browser suite is intentionally environment-backed rather than mocked. Locally it skips when the documented `E2E_*` fixture variables are absent. Its dedicated GitHub workflow starts local Supabase and creates disposable fixtures automatically; it never targets production.
 
 #### 6.5 Protect third-party provider paths
 
@@ -245,12 +247,13 @@ This controls latency, abuse, and Mapbox cost exposure.
 
 #### 6.6 Reduce internal hotspots without changing deployment topology
 
-Refactor when touching these areas:
+Stage B completed the first responsibility splits:
 
-- split `geocoding-service.ts` by provider, orchestration, and ranking responsibility;
-- split `place-repository.ts` into public-map reads, admin reads, and writes;
-- move direct database access out of `moderation-service.ts` and `summary-service.ts`;
-- introduce typed repository results instead of loose `Record<string, unknown>` updates;
+- `geocoding-service.ts` now orchestrates and ranks while `server/geocoding/provider-client.ts` owns provider transport and response mapping;
+- place creation and duplicate detection live in `place-write-repository.ts`, and moderation place/audit writes live in `moderation-write-repository.ts`;
+- direct database access moved out of `moderation-service.ts`, with typed place-field updates at the repository boundary;
+- `place-repository.ts` remains the compatibility facade for public/admin reads; split those query groups when either is next changed rather than duplicating query logic now;
+- `summary-service.ts` direct access remains the last known layering exception;
 - preserve one directional dependency: route → service → repository/database.
 
 This is modular-monolith cleanup, not a reason to create network services.
@@ -276,9 +279,9 @@ Implement these only when a selected feature requires them:
 | --- | --- | --- |
 | UI polish and local presentation changes | Ready | Can proceed with existing tests and visual verification |
 | New bounded public read/filter | Mostly ready | Add query/index and response-contract tests; measure payload and latency |
-| New authenticated mutation | Not ready | Complete transactional P0 write work next (RLS lockdown landed) |
-| More moderation workflows | Not ready | First make existing moderation actions atomic and integration-tested |
-| More geocoding-dependent behavior | Not ready | Add endpoint protection, timeouts, cache, and provider monitoring |
+| New authenticated mutation | Ready with checklist | Use transactional RPC/repository boundaries, stable service errors, and integration coverage |
+| More moderation workflows | Mostly ready | Existing core actions are atomic; add workflow-specific integration tests |
+| More geocoding-dependent behavior | Mostly ready | Provider protection and split are present; verify quota/cost assumptions for each feature |
 | Second card product | Partially ready | Schema supports it; product behavior, cache isolation, and fixtures do not yet prove it |
 | Notifications or scheduled processing | Foundation missing | Add outbox/worker only for the selected feature |
 | Uploads, OCR, social, payments | Out of current scope | Require separate product, privacy, abuse, and cost justification |
@@ -312,10 +315,10 @@ Small read-only work does not need heavyweight design. The checklist scales with
 
 ### Stage B — maintainability
 
-1. Add Supabase integration tests and a minimal critical-path E2E suite.
-2. Split oversized geocoding and place persistence modules along existing responsibilities.
-3. Standardize mutation errors, conflict responses, and idempotency behavior.
-4. Record query and cache baselines so future scaling decisions use evidence.
+1. ~~Add Supabase integration tests and a minimal critical-path E2E suite.~~ **Done** with `npm run test:integration` and the environment-backed `npm run test:e2e` journey.
+2. ~~Split oversized geocoding and place persistence modules along existing responsibilities.~~ **Done** for provider transport, place writes, and moderation writes; the read facade remains compatible and is split-on-touch.
+3. ~~Standardize mutation errors, conflict responses, and idempotency behavior.~~ **Done** with typed `ServiceError`, stable mutation `code` values, `409 CONFLICT` for daily duplicates, and transactional state-idempotency tests/documentation.
+4. ~~Record query and cache baselines so future scaling decisions use evidence.~~ **Done** in `docs/performance-baseline.md` with a repeatable `npm run baseline:api` sampler.
 
 ### Stage C — product work
 
@@ -366,10 +369,12 @@ Future architecture changes should be added only when supported by code, an acce
 At the time of this assessment:
 
 ```text
-npm test          42 files, 226 tests passed
+npm test          43 files, 228 tests passed
 npm run typecheck passed
 npm run lint      passed
-npm run test:rls  1 file, 16 tests defined; not rerun on 2026-07-15 because local Docker was unavailable
+npm run test:rls  1 file, 16 tests defined; not rerun on 2026-07-16 because local Docker was unavailable
+npm run test:integration 3 live transactional tests defined; requires migrated local/disposable Supabase
+npm run test:e2e  1 environment-backed critical-path test defined; dedicated GitHub workflow provisions fixtures and Chromium
 npm run build     passed
 ```
 
