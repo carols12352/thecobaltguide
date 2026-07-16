@@ -1,12 +1,11 @@
 import {
   jsonAdmin,
-  jsonError,
   jsonForbidden,
   jsonUnauthorized,
   jsonValidationError,
 } from "@/lib/api/response";
 import { AuthError, requireModerator } from "@/lib/auth/session";
-import { captureException } from "@/lib/monitoring/sentry";
+import { mutationRouteError } from "@/lib/api/mutation-error";
 import { moderationService } from "@/server/services/moderation-service";
 import { adminPlaceMergeSchema } from "@/server/validation/schemas";
 
@@ -33,7 +32,9 @@ export async function POST(request: Request) {
         ? jsonForbidden(error.message)
         : jsonUnauthorized(error.message);
     }
-    captureException(error, { route: "POST /api/admin/places/merge" });
-    return jsonError("Failed to merge places", 500);
+    return mutationRouteError(error, {
+      route: "POST /api/admin/places/merge",
+      fallbackMessage: "Failed to merge places",
+    });
   }
 }

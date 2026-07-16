@@ -1,12 +1,11 @@
 import {
   jsonAdmin,
-  jsonError,
   jsonForbidden,
   jsonUnauthorized,
   jsonValidationError,
 } from "@/lib/api/response";
 import { AuthError, requireModerator } from "@/lib/auth/session";
-import { captureException } from "@/lib/monitoring/sentry";
+import { mutationRouteError } from "@/lib/api/mutation-error";
 import { moderationService } from "@/server/services/moderation-service";
 import { adminFlagPatchSchema } from "@/server/validation/schemas";
 
@@ -37,7 +36,9 @@ export async function PATCH(
         ? jsonForbidden(error.message)
         : jsonUnauthorized(error.message);
     }
-    captureException(error, { route: "PATCH /api/admin/flags/:id" });
-    return jsonError("Failed to update flag", 500);
+    return mutationRouteError(error, {
+      route: "PATCH /api/admin/flags/:id",
+      fallbackMessage: "Failed to update flag",
+    });
   }
 }

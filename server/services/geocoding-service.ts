@@ -10,43 +10,24 @@ import {
   mergeGeocodeResultsByTier,
   type GeocodeMatchTier,
 } from "@/lib/geocoding/address-query";
-import {
-  buildMapboxForwardGeocodeUrl,
-  type MapboxProximity,
-} from "@/lib/geocoding/mapbox-search";
-import {
-  buildMapboxSearchBoxForwardUrl,
-  mapMapboxSearchBoxFeature,
-} from "@/lib/geocoding/mapbox-searchbox";
-import { streetFromMapboxPlaceName, cityFromMapboxPlaceName } from "@/lib/geocoding/mapbox-feature";
+import type { MapboxProximity } from "@/lib/geocoding/mapbox-search";
 import {
   filterBusinessGeocodeResults,
   filterGeocodeResultsForLookupContext,
-  isPostalCodeLabel,
   pickPreferredGeocodeResult,
   rankBusinessGeocodeResults,
   rankGeocodeResults,
   resolveGeocodeAddressLine1,
 } from "@/lib/geocoding/parse-result";
-import { GEOCODING_PROVIDER_POLICY } from "@/config/constants";
-import { recordMetric } from "@/lib/monitoring/sentry";
+import {
+  fetchGeocodingProvider,
+  geocodingProviderClient,
+} from "@/server/geocoding/provider-client";
 
 export type GeocodeSource = "address" | "postal";
 
 const MAX_RESULTS_PER_TIER = 5;
 const MAX_BUSINESS_RESULTS = 10;
-const NOMINATIM_BUSINESS_VIEWBOX_DELTA = 0.25;
-
-type MapboxFeature = {
-  id: string;
-  text: string;
-  address?: string;
-  place_name: string;
-  place_type?: string[];
-  center: [number, number];
-  context?: Array<{ id: string; text: string; short_code?: string }>;
-};
-
 type StructuredGeocodeInput = {
   name?: string;
   addressLine1?: string;
@@ -55,64 +36,12 @@ type StructuredGeocodeInput = {
   postalCode?: string;
 };
 
-type GeocodeProvider = "mapbox" | "nominatim";
-
-async function fetchProvider(
-  provider: GeocodeProvider,
-  operation: string,
-  input: string | URL,
-  init: RequestInit = {},
-): Promise<Response> {
-  const retries =
-    provider === "mapbox"
-      ? GEOCODING_PROVIDER_POLICY.mapboxRetries
-      : GEOCODING_PROVIDER_POLICY.nominatimRetries;
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const startedAt = performance.now();
-    try {
-      const response = await fetch(input, {
-        ...init,
-        signal: AbortSignal.timeout(GEOCODING_PROVIDER_POLICY.timeoutMs),
-      });
-      recordMetric("geocoding.provider.duration_ms", performance.now() - startedAt, {
-        provider,
-        operation,
-        status: response.status,
-        attempt,
-      });
-      if (!response.ok) {
-        recordMetric("geocoding.provider.failure", 1, {
-          provider,
-          operation,
-          reason: "http",
-          status: response.status,
-          attempt,
-        });
-      }
-      if (response.ok || response.status < 500) return response;
-      lastError = new Error(`${provider} ${operation} failed: ${response.status}`);
-    } catch (error) {
-      lastError = error;
-      recordMetric("geocoding.provider.failure", 1, {
-        provider,
-        operation,
-        reason: error instanceof Error && error.name === "TimeoutError" ? "timeout" : "network",
-        attempt,
-      });
-    }
-  }
-
-  throw lastError ?? new Error(`${provider} ${operation} failed`);
-}
-
 export class GeocodingService {
   async searchAddress(query: string): Promise<GeocodingResult[]> {
     const token = process.env.MAPBOX_ACCESS_TOKEN;
     if (token) {
       try {
-        const mapboxResults = await this.searchMapbox(query, token);
+        const mapboxResults = await geocodingProviderClient.searchMapbox(query, token);
         if (mapboxResults.length > 0) return mapboxResults;
       } catch {
         // Fall through to Nominatim.
@@ -120,7 +49,7 @@ export class GeocodingService {
     }
 
     try {
-      return await this.searchNominatim(query);
+      return await geocodingProviderClient.searchNominatim(query);
     } catch {
       return [];
     }
@@ -209,7 +138,7 @@ export class GeocodingService {
     let searchBoxResults: GeocodingResult[] = [];
     if (token && input.name?.trim()) {
       try {
-        const rawSearchBox = await this.searchMapboxSearchBox(
+        const rawSearchBox = await geocodingProviderClient.searchMapboxSearchBox(
           input.name.trim(),
           token,
           proximity,
@@ -246,7 +175,7 @@ export class GeocodingService {
     if (token) {
       try {
         for (const types of ["poi", "poi,address"] as const) {
-          const results = await this.searchMapboxWithTypes(
+          const results = await geocodingProviderClient.searchMapboxWithTypes(
             query,
             token,
             types,
@@ -266,7 +195,7 @@ export class GeocodingService {
 
     try {
       const results = rankGeocodeResults(
-        await this.searchNominatim(query, cityCentroid),
+        await geocodingProviderClient.searchNominatim(query, cityCentroid),
       );
       return this.filterBusinessTierResults(results, input, cityCentroid);
     } catch {
@@ -305,7 +234,7 @@ export class GeocodingService {
     if (!cityQuery) return undefined;
 
     try {
-      const results = rankGeocodeResults(await this.searchNominatim(cityQuery));
+      const results = rankGeocodeResults(await geocodingProviderClient.searchNominatim(cityQuery));
       const anchor = results[0];
       if (!anchor) return undefined;
       return { latitude: anchor.latitude, longitude: anchor.longitude };
@@ -322,7 +251,7 @@ export class GeocodingService {
     if (!cityQuery) return undefined;
 
     try {
-      const results = await this.searchMapboxWithTypes(
+      const results = await geocodingProviderClient.searchMapboxWithTypes(
         cityQuery,
         token,
         "place,locality",
@@ -572,14 +501,16 @@ export class GeocodingService {
       url.searchParams.set("proximity", `${longitude},${latitude}`);
       url.searchParams.set("limit", "10");
 
-      const response = await fetchProvider("mapbox", "nearby-address", url);
+      const response = await fetchGeocodingProvider("mapbox", "nearby-address", url);
       if (!response.ok) return [];
 
       const data = await response.json();
       return filterGeocodeResultsForLookupContext(
         rankGeocodeResults(
           (data.features ?? [])
-            .map((feature: MapboxFeature) => this.mapMapboxFeature(feature))
+            .map((feature: Parameters<typeof geocodingProviderClient.mapMapboxFeature>[0]) =>
+              geocodingProviderClient.mapMapboxFeature(feature),
+            )
             .filter((result: GeocodingResult) => {
               const street = resolveGeocodeAddressLine1(result);
               return Boolean(
@@ -603,7 +534,7 @@ export class GeocodingService {
     const token = process.env.MAPBOX_ACCESS_TOKEN;
     if (token) {
       try {
-        const results = await this.reverseGeocodeMapbox(latitude, longitude, token);
+        const results = await geocodingProviderClient.reverseGeocodeMapbox(latitude, longitude, token);
         if (results.length > 0) return results;
       } catch {
         // Fall through to Nominatim.
@@ -611,322 +542,12 @@ export class GeocodingService {
     }
 
     try {
-      return await this.reverseGeocodeNominatim(latitude, longitude);
+      return await geocodingProviderClient.reverseGeocodeNominatim(latitude, longitude);
     } catch {
       return [];
     }
   }
 
-  private async reverseGeocodeMapbox(
-    latitude: number,
-    longitude: number,
-    token: string,
-  ): Promise<GeocodingResult[]> {
-    const strict = await this.fetchMapboxReverseFeatures(
-      latitude,
-      longitude,
-      token,
-      "address",
-    );
-    const strictResults = this.mapMapboxStreetResults(strict);
-    if (strictResults.length > 0) return strictResults;
-
-    const broad = await this.fetchMapboxReverseFeatures(
-      latitude,
-      longitude,
-      token,
-      "address,street",
-    );
-    return this.mapMapboxStreetResults(broad);
-  }
-
-  private async fetchMapboxReverseFeatures(
-    latitude: number,
-    longitude: number,
-    token: string,
-    types: string,
-  ): Promise<MapboxFeature[]> {
-    const url = new URL(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json`,
-    );
-    url.searchParams.set("access_token", token);
-    url.searchParams.set("types", types);
-    url.searchParams.set("limit", "10");
-
-    const response = await fetchProvider("mapbox", "reverse", url);
-    if (!response.ok) {
-      throw new Error(`Reverse geocoding request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return (data.features ?? []) as MapboxFeature[];
-  }
-
-  private mapMapboxStreetResults(features: MapboxFeature[]): GeocodingResult[] {
-    return rankGeocodeResults(
-      features
-        .map((feature) => this.mapMapboxFeature(feature))
-        .filter((result: GeocodingResult) => {
-          const street = resolveGeocodeAddressLine1(result);
-          return Boolean(street && looksLikeStreetAddress(street));
-        }),
-    );
-  }
-
-  private async reverseGeocodeNominatim(
-    latitude: number,
-    longitude: number,
-  ): Promise<GeocodingResult[]> {
-    const url = new URL("https://nominatim.openstreetmap.org/reverse");
-    url.searchParams.set("lat", String(latitude));
-    url.searchParams.set("lon", String(longitude));
-    url.searchParams.set("format", "json");
-    url.searchParams.set("addressdetails", "1");
-
-    const response = await fetchProvider("nominatim", "reverse", url, {
-      headers: {
-        "User-Agent": "CobaltMerchantMap/1.0 (merchant submit geocoding)",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Reverse geocoding request failed: ${response.status}`);
-    }
-
-    const hit = (await response.json()) as {
-      lat: string;
-      lon: string;
-      display_name: string;
-      address?: {
-        road?: string;
-        house_number?: string;
-        city?: string;
-        town?: string;
-        village?: string;
-        state?: string;
-        postcode?: string;
-      };
-    };
-
-    const address = hit.address ?? {};
-    const street = [address.house_number, address.road].filter(Boolean).join(" ");
-    if (!street) return [];
-
-    const city = address.city ?? address.town ?? address.village ?? "";
-    return rankGeocodeResults([
-      {
-        name: street,
-        addressLine1: street,
-        city,
-        province: address.state ?? "",
-        postalCode: address.postcode ?? "",
-        countryCode: "CA",
-        latitude: parseFloat(hit.lat),
-        longitude: parseFloat(hit.lon),
-        externalPlaceId: `nominatim:reverse:${hit.lat},${hit.lon}`,
-      },
-    ]);
-  }
-
-  private queryTargetsPostcode(query: string): boolean {
-    return /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\s?\d[ABCEGHJ-NPRSTV-Z]\d/i.test(
-      query.trim(),
-    );
-  }
-
-  private mapMapboxFeature(feature: MapboxFeature): GeocodingResult {
-    const ctx = feature.context ?? [];
-    const placeTypes = feature.place_type ?? [];
-    const city =
-      ctx.find((c) => c.id.startsWith("place."))?.text ??
-      cityFromMapboxPlaceName(feature.place_name) ??
-      "";
-    const province =
-      ctx.find((c) => c.id.startsWith("region."))?.short_code?.replace("CA-", "") ??
-      "";
-    const postalFromContext =
-      ctx.find((c) => c.id.startsWith("postcode."))?.text ?? "";
-
-    let addressLine1 = "";
-    if (placeTypes.includes("poi") && feature.place_name) {
-      addressLine1 = streetFromMapboxPlaceName(feature.place_name);
-    } else if (
-      feature.address &&
-      feature.text &&
-      !isPostalCodeLabel(feature.text) &&
-      (placeTypes.includes("address") || looksLikeStreetAddress(feature.text))
-    ) {
-      addressLine1 = `${feature.address} ${feature.text}`.trim();
-    } else if (
-      placeTypes.includes("address") &&
-      feature.text &&
-      !isPostalCodeLabel(feature.text)
-    ) {
-      addressLine1 = feature.place_name.split(",")[0]?.trim() ?? feature.text;
-    }
-
-    const postalCode = postalFromContext
-      || (isPostalCodeLabel(feature.text) ? feature.text : "");
-
-    return {
-      name: feature.text,
-      addressLine1,
-      city,
-      province,
-      postalCode,
-      countryCode: "CA",
-      latitude: feature.center[1],
-      longitude: feature.center[0],
-      externalPlaceId: feature.id,
-    };
-  }
-
-  private async searchMapboxSearchBox(
-    query: string,
-    token: string,
-    proximity?: MapboxProximity,
-    fallbackProvince?: string,
-  ): Promise<GeocodingResult[]> {
-    const url = buildMapboxSearchBoxForwardUrl(query, {
-      accessToken: token,
-      types: "poi",
-      proximity,
-    });
-
-    const response = await fetchProvider("mapbox", "search-box", url);
-    if (!response.ok) {
-      throw new Error(`Search Box request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return (data.features ?? []).map((feature: Parameters<typeof mapMapboxSearchBoxFeature>[0]) =>
-      mapMapboxSearchBoxFeature(feature, { fallbackProvince }),
-    );
-  }
-
-  private async searchMapbox(
-    query: string,
-    token: string,
-  ): Promise<GeocodingResult[]> {
-    return this.searchMapboxWithTypes(
-      query,
-      token,
-      this.queryTargetsPostcode(query)
-        ? "address,postcode,place"
-        : "address,poi,postcode",
-    );
-  }
-
-  private async searchMapboxWithTypes(
-    query: string,
-    token: string,
-    types: string,
-    proximity?: MapboxProximity,
-  ): Promise<GeocodingResult[]> {
-    const url = buildMapboxForwardGeocodeUrl(query, {
-      accessToken: token,
-      types,
-      proximity,
-    });
-
-    const response = await fetchProvider("mapbox", "forward", url);
-    if (!response.ok) {
-      throw new Error(`Geocoding request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return (data.features ?? []).map((feature: MapboxFeature) =>
-      this.mapMapboxFeature(feature),
-    );
-  }
-
-  private async searchNominatim(
-    query: string,
-    cityCentroid?: { latitude: number; longitude: number },
-  ): Promise<GeocodingResult[]> {
-    const url = new URL("https://nominatim.openstreetmap.org/search");
-    url.searchParams.set("q", query);
-    url.searchParams.set("format", "json");
-    url.searchParams.set("limit", "10");
-    url.searchParams.set("countrycodes", "ca");
-    url.searchParams.set("addressdetails", "1");
-
-    if (cityCentroid) {
-      const { latitude, longitude } = cityCentroid;
-      const delta = NOMINATIM_BUSINESS_VIEWBOX_DELTA;
-      url.searchParams.set(
-        "viewbox",
-        [
-          longitude - delta,
-          latitude + delta,
-          longitude + delta,
-          latitude - delta,
-        ].join(","),
-      );
-      url.searchParams.set("bounded", "1");
-    }
-
-    const response = await fetchProvider("nominatim", "forward", url, {
-      headers: {
-        "User-Agent": "CobaltMerchantMap/1.0 (merchant submit geocoding)",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Geocoding request failed: ${response.status}`);
-    }
-
-    const results = (await response.json()) as Array<{
-      lat: string;
-      lon: string;
-      display_name: string;
-      address?: {
-        road?: string;
-        house_number?: string;
-        city?: string;
-        town?: string;
-        village?: string;
-        state?: string;
-        postcode?: string;
-      };
-    }>;
-
-    return results.map((hit, index) => {
-      const address = hit.address ?? {};
-      const street = [address.house_number, address.road].filter(Boolean).join(" ");
-      const city = address.city ?? address.town ?? address.village ?? "";
-      const businessName = hit.display_name.split(",")[0]?.trim() ?? "";
-      const fallbackLine = hit.display_name.split(",")[0]?.trim() ?? "";
-      let addressLine1 =
-        street ||
-        (fallbackLine && !isPostalCodeLabel(fallbackLine) ? fallbackLine : "");
-      if (!addressLine1 || addressLine1 === businessName) {
-        const streetPart = hit.display_name
-          .split(",")
-          .map((part) => part.trim())
-          .find(
-            (part) =>
-              part &&
-              part !== businessName &&
-              looksLikeStreetAddress(part, { name: businessName }),
-          );
-        if (streetPart) addressLine1 = streetPart;
-      }
-
-      return {
-        name: businessName || street || fallbackLine || "Location",
-        addressLine1,
-        city,
-        province: address.state ?? "",
-        postalCode: address.postcode ?? "",
-        countryCode: "CA",
-        latitude: parseFloat(hit.lat),
-        longitude: parseFloat(hit.lon),
-        externalPlaceId: `nominatim:${index}:${hit.lat},${hit.lon}`,
-        geocodeLabel: hit.display_name,
-      };
-    });
-  }
 }
 
 export class GeocodingNotConfiguredError extends Error {

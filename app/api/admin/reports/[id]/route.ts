@@ -1,12 +1,11 @@
 import {
   jsonAdmin,
-  jsonError,
   jsonForbidden,
   jsonUnauthorized,
   jsonValidationError,
 } from "@/lib/api/response";
 import { AuthError, requireModerator } from "@/lib/auth/session";
-import { captureException } from "@/lib/monitoring/sentry";
+import { mutationRouteError } from "@/lib/api/mutation-error";
 import { moderationService } from "@/server/services/moderation-service";
 import { adminReportPatchSchema } from "@/server/validation/schemas";
 
@@ -43,7 +42,9 @@ export async function PATCH(
         ? jsonForbidden(error.message)
         : jsonUnauthorized(error.message);
     }
-    captureException(error, { route: "PATCH /api/admin/reports/:id" });
-    return jsonError("Failed to update report", 500);
+    return mutationRouteError(error, {
+      route: "PATCH /api/admin/reports/:id",
+      fallbackMessage: "Failed to update report",
+    });
   }
 }

@@ -22,9 +22,13 @@ import { reputationService } from "@/server/services/reputation-service";
 import {
   groupAdminFlags,
 } from "@/lib/flags/admin-flag-groups";
-import { createAdminClient } from "@/lib/supabase/admin";
 import type { CreateFlagInput } from "@/server/validation/schemas";
 import { transactionRepository } from "@/server/repositories/transaction-repository";
+import { notFound } from "@/server/services/service-error";
+import {
+  moderationWriteRepository,
+  type AdminPlaceFieldUpdates,
+} from "@/server/repositories/moderation-write-repository";
 
 export class ModerationService {
   async getRecentReports(limit = 50) {
@@ -46,7 +50,7 @@ export class ModerationService {
   ) {
     const existing = await reportRepository.findById(reportId);
     if (!existing) {
-      throw new Error("Report not found");
+      throw notFound("Report not found");
     }
 
     const result = await transactionRepository.moderateReport({
@@ -69,7 +73,7 @@ export class ModerationService {
   async approveReport(reportId: string, moderatorId: string) {
     const existing = await reportRepository.findById(reportId);
     if (!existing) {
-      throw new Error("Report not found");
+      throw notFound("Report not found");
     }
 
     const { report, dismissedFlagIds } =
@@ -164,7 +168,7 @@ export class ModerationService {
   ) {
     const existing = await flagRepository.findById(flagId);
     if (!existing) {
-      throw new Error("Flag not found");
+      throw notFound("Flag not found");
     }
 
     if (status === "resolved" || status === "dismissed") {
@@ -231,11 +235,13 @@ export class ModerationService {
     let placeRecord: Record<string, unknown> | null = null;
 
     if (Object.keys(placeUpdates).length > 0) {
-      placeRecord = await this.updatePlaceFields(
+      placeRecord = await moderationWriteRepository.updatePlaceFields(
         placeId,
-        placeUpdates,
-        moderatorId,
+        placeUpdates as AdminPlaceFieldUpdates,
       );
+      await invalidatePlaceReadCaches(placeId);
+      await invalidateAdminCaches();
+      await this.logAction(moderatorId, "place", placeId, "update");
     }
 
     if (summaryUpdates && Object.keys(summaryUpdates).length > 0) {
@@ -254,43 +260,6 @@ export class ModerationService {
 
     const place = await placeRepository.findByIdForAdmin(placeId);
     return place;
-  }
-
-  private async updatePlaceFields(
-    placeId: string,
-    updates: Record<string, unknown>,
-    moderatorId: string,
-  ) {
-    const supabase = createAdminClient();
-    const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-
-    if (updates.name) dbUpdates.name = updates.name;
-    if (updates.addressLine1) dbUpdates.address_line1 = updates.addressLine1;
-    if (updates.city) dbUpdates.city = updates.city;
-    if (updates.province) dbUpdates.province = updates.province;
-    if (updates.postalCode) dbUpdates.postal_code = updates.postalCode;
-    if (updates.category) dbUpdates.category = updates.category;
-    if (updates.acceptsAmex !== undefined) dbUpdates.accepts_amex = updates.acceptsAmex;
-    if (updates.status) dbUpdates.status = updates.status;
-    if (
-      typeof updates.latitude === "number" &&
-      typeof updates.longitude === "number"
-    ) {
-      dbUpdates.location = `SRID=4326;POINT(${updates.longitude} ${updates.latitude})`;
-    }
-
-    const { data, error } = await supabase
-      .from("places")
-      .update(dbUpdates)
-      .eq("id", placeId)
-      .select("*")
-      .single();
-
-    if (error) throw error;
-    await invalidatePlaceReadCaches(placeId);
-    await invalidateAdminCaches();
-    await this.logAction(moderatorId, "place", placeId, "update");
-    return data;
   }
 
   async mergePlaces(
@@ -339,14 +308,13 @@ export class ModerationService {
     reason?: string,
     metadata?: Record<string, unknown>,
   ) {
-    const supabase = createAdminClient();
-    await supabase.from("moderation_logs").insert({
-      moderator_id: moderatorId,
-      entity_type: entityType,
-      entity_id: entityId,
+    await moderationWriteRepository.logAction({
+      moderatorId,
+      entityType,
+      entityId,
       action,
-      reason: reason ?? null,
-      metadata: metadata ?? {},
+      reason,
+      metadata,
     });
   }
 }

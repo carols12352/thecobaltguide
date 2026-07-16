@@ -1,11 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { DEFAULT_CARD_SLUG, DUPLICATE_DETECTION, MAP_DEFAULTS } from "@/config/constants";
+import { DEFAULT_CARD_SLUG, MAP_DEFAULTS } from "@/config/constants";
 import { parseGeoLocation } from "@/lib/map/parse-location";
-import { normalizeMerchantName, nameSimilarity } from "@/lib/utils";
+import { normalizeMerchantName } from "@/lib/utils";
 import { normalizeCanadianPostalCode } from "@/lib/validation/canadian-postal-code";
 import { confidenceScoreForAdminLevel } from "@/server/services/aggregation";
 import type { CreatePlaceInput } from "@/server/validation/schemas";
+import { placeWriteRepository } from "@/server/repositories/place-write-repository";
 import type { AdminPlaceDetail, ConfidenceLevel, MapPlace, MultiplierValue, PlaceDetail, PlaceSummary } from "@/types/domain";
 
 export class PlaceRepository {
@@ -623,58 +624,11 @@ export class PlaceRepository {
   }
 
   async create(input: CreatePlaceInput, userId: string) {
-    const supabase = createAdminClient();
-    const normalizedName = normalizeMerchantName(input.name);
-
-    const { data, error } = await supabase
-      .from("places")
-      .insert({
-        name: input.name,
-        normalized_name: normalizedName,
-        address_line1: input.addressLine1,
-        city: input.city,
-        province: input.province,
-        postal_code: input.postalCode,
-        country_code: input.countryCode,
-        location: `SRID=4326;POINT(${input.longitude} ${input.latitude})`,
-        category: input.category,
-        accepts_amex: input.acceptsAmex ?? null,
-        external_place_id: input.externalPlaceId ?? null,
-        brand_id: input.brandId ?? null,
-        created_by: userId,
-      })
-      .select("id")
-      .single();
-
-    if (error) throw error;
-    return data;
+    return placeWriteRepository.create(input, userId);
   }
 
   async findPossibleDuplicates(input: CreatePlaceInput) {
-    const supabase = createAdminClient();
-
-    if (input.externalPlaceId) {
-      const { data } = await supabase
-        .from("places")
-        .select("id, name, address_line1")
-        .eq("external_place_id", input.externalPlaceId)
-        .eq("status", "active")
-        .limit(1);
-      if (data?.length) return data;
-    }
-
-    const { data: nearby } = await supabase.rpc("places_nearby", {
-      p_latitude: input.latitude,
-      p_longitude: input.longitude,
-      p_radius_metres: DUPLICATE_DETECTION.maxDistanceMetres,
-      p_limit: 10,
-    });
-
-    return (nearby ?? []).filter(
-      (p: { name: string }) =>
-        nameSimilarity(p.name, input.name) >=
-        DUPLICATE_DETECTION.nameSimilarityThreshold,
-    );
+    return placeWriteRepository.findPossibleDuplicates(input);
   }
 
   async searchForAdmin(options: {

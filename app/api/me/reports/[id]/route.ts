@@ -1,11 +1,9 @@
 import {
-  jsonError,
-  jsonNotFound,
   jsonOk,
   jsonUnauthorized,
 } from "@/lib/api/response";
 import { AuthError, requireAuth } from "@/lib/auth/session";
-import { captureException } from "@/lib/monitoring/sentry";
+import { mutationRouteError } from "@/lib/api/mutation-error";
 import { reportService } from "@/server/services/report-service";
 
 export async function DELETE(
@@ -20,13 +18,9 @@ export async function DELETE(
     return jsonOk({ report });
   } catch (error) {
     if (error instanceof AuthError) return jsonUnauthorized(error.message);
-    if (error instanceof Error && error.message === "Report not found") {
-      return jsonNotFound("Report not found");
-    }
-    if (error instanceof Error && error.message === "Report cannot be removed") {
-      return jsonError("This report can no longer be removed.", 403);
-    }
-    captureException(error, { route: "DELETE /api/me/reports/:id" });
-    return jsonError("Failed to delete report", 500);
+    return mutationRouteError(error, {
+      route: "DELETE /api/me/reports/:id",
+      fallbackMessage: "Failed to delete report",
+    });
   }
 }

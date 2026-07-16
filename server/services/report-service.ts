@@ -16,6 +16,7 @@ import { transactionRepository } from "@/server/repositories/transaction-reposit
 import { ReputationBlockedError } from "@/server/services/reputation-service";
 import type { CreateReportInput } from "@/server/validation/schemas";
 import type { ReportKind } from "@/types/domain";
+import { forbidden, notFound } from "@/server/services/service-error";
 
 type UserReportsListOptions = {
   view?: "active" | "archive";
@@ -143,14 +144,14 @@ export class ReportService {
   async deleteOwnReport(reportId: string, userId: string) {
     const existing = await reportRepository.findById(reportId);
     if (!existing || existing.userId !== userId || existing.status !== "active") {
-      throw new Error("Report not found");
+      throw notFound("Report not found");
     }
     if (!canUserRemoveReport({
       ...existing,
       reviewedAt: existing.reviewedAt ?? null,
       reviewedBy: existing.reviewedBy ?? null,
     })) {
-      throw new Error("Report cannot be removed");
+      throw forbidden("This report can no longer be removed.");
     }
 
     const report = await transactionRepository.deleteOwnReport(reportId, userId);
