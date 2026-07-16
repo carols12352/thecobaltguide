@@ -22,8 +22,8 @@
 
 # misc
 .DS_Store
-data/geocode-cache.json
-data/rewards-canada/cobaltcanada.json
+# One-time reviewed seed; remove after its successful database replacement.
+data/rewards-canada/cobaltcanada-canada-reviewed.json
 *.pem
 *.p12
 *.key

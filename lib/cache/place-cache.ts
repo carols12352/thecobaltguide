@@ -221,17 +221,18 @@ export async function setCachedSearch(
 }
 
 /** Invalidate read caches after DB writes. Map and search use version bumps. */
-export async function invalidatePlaceReadCaches(placeId: string): Promise<void> {
+export async function invalidatePlaceReadCaches(placeId: string): Promise<boolean> {
   if (!isRedisWriteConfigured()) {
     if (process.env.NODE_ENV === "development") {
       console.warn("[redis] place cache not invalidated — missing write token");
     }
-    return;
+    return false;
   }
 
-  await Promise.all([
+  const [, mapVersion, searchVersion] = await Promise.all([
     cacheDel(placeCacheKey(placeId)),
     cacheBumpVersion(MAP_VERSION_KEY),
     cacheBumpVersion(SEARCH_VERSION_KEY),
   ]);
+  return mapVersion > 0 && searchVersion > 0;
 }

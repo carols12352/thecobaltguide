@@ -26,7 +26,7 @@ The product is technically ready for small, isolated UI and read-only improvemen
 | Server layer | About 3.9k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Automated tests | 227 unit tests across 41 Vitest files; 16 live RLS/grant tests defined via `npm run test:rls` |
+| Automated tests | See the verified baseline in [Section 12](#12-verification-baseline); 16 live RLS/grant tests are defined via `npm run test:rls` |
 | CI | lint, typecheck, unit tests, live local RLS tests, production build |
 | Integration/E2E tests | Live RLS matrix present; broader workflow/E2E coverage not present |
 | Production error monitoring | Sentry server SDK, Next.js request-error hook, traces, and structured operational metrics are wired; production requires Sentry environment variables and alert configuration |
@@ -100,8 +100,12 @@ The migration history currently defines:
 - `places`: one physical merchant location with a PostGIS geography point.
 - `multiplier_reports`: raw community reports and moderation state.
 - `place_multiplier_summaries`: precomputed result per place/card.
+- `merchant_multiplier_coverages`: non-point merchant coverage by city, province, or country.
+- `online_merchant_multipliers`: online-only merchants kept off the physical map.
 - `place_flags`: community corrections and review state.
 - `moderation_logs`: staff action audit rows.
+- `rewards_canada_place_import_stage` and `rewards_canada_online_import_stage`:
+  service-role-only staging for a validated, atomic seed replacement.
 - `lookup_auth_account_hints(text)`: service-role-only database function used by sign-in flows.
 
 `supabase/migrations/` is authoritative for schema and RLS. TypeScript domain types are application projections and must be updated with migrations.
@@ -127,6 +131,29 @@ Authorization is checked in Route Handlers with `requireAuth`, `requireModerator
 6. Mutations bump cache versions and invalidate affected detail/admin/account entries.
 
 This is already an appropriate scale-first design. Query plans, cache hit rates, and production latency should be measured before changing the topology.
+
+### Rewards Canada seed replacement
+
+The corrected initial dataset is maintained as one ignored local reviewed JSON,
+not as a runtime fetch or scheduled job:
+
+```text
+reviewed JSON
+  → Zod validation and reviewed name/channel rules
+  → deterministic duplicate removal
+  → service-role-only staging tables in bounded batches
+  → one PostgreSQL transaction replaces seed places, summaries, and online rows
+```
+
+Physical places use stable `rewards-canada:` external identifiers. Online-only
+merchants are stored separately, while review queues and rejected candidates
+never enter staging. The database validates expected row counts and refuses a
+destructive replacement when seed places have community reports, flags, or
+moderation history unless the operator explicitly permits that pre-production
+cascade. The cascade removes related polymorphic audit references and adjusts
+affected profile contribution counters before the foreign-key deletes. A failed
+upload or transaction leaves the prior seed intact. After commit, the local
+operator bumps Redis map and search versions when a write token is configured.
 
 ### Report write path
 
@@ -235,7 +262,7 @@ Implement these only when a selected feature requires them:
 | Proposed capability | Required foundation |
 | --- | --- |
 | Notifications/email | Durable outbox, retry/idempotency, delivery preferences, unsubscribe/privacy rules |
-| Bulk imports | Job table or worker, idempotent import keys, checkpoints, failure report, provider quotas |
+| Recurring bulk imports | Job table or worker, idempotent import keys, checkpoints, failure report, provider quotas |
 | Second card product | Product-aware UI/API/cache keys, per-card test fixtures, migration and aggregation verification |
 | Screenshot/OCR | Private object storage, malware/file validation, retention/deletion policy, async processing, moderation cost model |
 | Comments/social features | Abuse tooling, deletion/export policy, notification controls, moderation capacity |
@@ -339,7 +366,7 @@ Future architecture changes should be added only when supported by code, an acce
 At the time of this assessment:
 
 ```text
-npm test          41 files, 227 tests passed
+npm test          42 files, 226 tests passed
 npm run typecheck passed
 npm run lint      passed
 npm run test:rls  1 file, 16 tests defined; not rerun on 2026-07-15 because local Docker was unavailable

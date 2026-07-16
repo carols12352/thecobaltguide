@@ -172,7 +172,7 @@ npx supabase link --project-ref your-project-ref
 npx supabase db push
 ```
 
-The migrations create the database tables, least-privilege RLS policies and grants, restricted function ACLs, bounded PostGIS functions and indexes, the default Amex Cobalt card product, report aggregation support, moderation fields, optimized viewport queries, and transactional report/moderation workflows. The Stage A security chain is `20260714120000`–`20260715120000`. See [`supabase/migrations/README.md`](supabase/migrations/README.md) for migration ownership, local/hosted workflows, deployment, and drift-repair rules.
+The migrations create the database tables, least-privilege RLS policies and grants, restricted function ACLs, bounded PostGIS functions and indexes, the default Amex Cobalt card product, report aggregation support, moderation fields, optimized viewport queries, transactional report/moderation workflows, and the atomic Rewards Canada replacement boundary. See [`supabase/migrations/README.md`](supabase/migrations/README.md) for migration ownership, local/hosted workflows, deployment, and drift-repair rules.
 
 For a fully local Supabase stack, install the Supabase CLI and Docker, then run:
 
@@ -257,10 +257,10 @@ directory remains ignored separately and must not be committed.
 | `npm run typecheck` | Run TypeScript without emitting files |
 | `npm test` | Run the Vitest suite once |
 | `npm run test:watch` | Run Vitest in watch mode |
-| `npm run import:rewards-canada:dry` | Preview 20 Rewards Canada import records |
-| `npm run import:rewards-canada` | Run the historical Rewards Canada import |
+| `npm run replace:rewards-canada` | Validate and preview the reviewed local seed |
+| `npm run replace:rewards-canada -- --apply --replace` | Atomically replace the Rewards Canada database seed |
 | `./scripts/commit-segmented.sh --dry-run` | Preview segmented commits for the current working tree |
-| `./scripts/commit-segmented.sh` | Create GPG-signed segmented commits (prompts for confirmation) |
+| `./scripts/commit-segmented.sh` | Create the predefined GPG-signed segmented commits |
 
 Run the standard verification set before submitting changes:
 
@@ -271,31 +271,36 @@ npm test
 npm run build
 ```
 
-## Historical Rewards Canada import
+## Rewards Canada seed replacement
 
-The initial community dataset can be imported with the traceability script in `supabase/scripts/`. This is not part of the normal application workflow.
+The reviewed one-time seed can be validated and atomically installed with the
+replacement script in `supabase/scripts/`. This is not part of normal
+application runtime.
 
-Always start with a dry run:
-
-```bash
-npm run import:rewards-canada:dry
-```
-
-Examples:
+Always validate locally first:
 
 ```bash
-npm run import:rewards-canada -- --dry-run --limit 100
-npm run import:rewards-canada -- --geocode city
-npm run import:rewards-canada -- --geocode precise
-npm run import:rewards-canada -- --local --geocode city
+npm run replace:rewards-canada
 ```
 
-- `city` geocoding reuses city coordinates and applies a deterministic spread to prevent stacked points.
-- `precise` geocoding attempts merchant-level locations.
-- `--local` reads `data/rewards-canada/cobaltcanada.json` instead of downloading the source.
-- Existing records are skipped using their external place ID.
+Replace existing Rewards Canada seed rows only after applying migrations:
 
-The script requires Supabase credentials for a live import. See [`supabase/scripts/README.md`](supabase/scripts/README.md) for its status and purpose.
+```bash
+npm run replace:rewards-canada -- --apply --replace
+```
+
+- The script is read-only unless both `--apply` and `--replace` are present.
+- Data is fully staged before one database transaction replaces the old seed.
+- Brand/name conflicts, shared POIs, and duplicate display rows are resolved locally before staging.
+- Review-only records are never staged or imported.
+- Existing community reports and flags block destructive replacement by default.
+- An explicit pre-production cascade removes related audit references and adjusts affected profile contribution counts.
+- Online-only merchants remain separate from physical map places.
+- Stable `rewards-canada:` identifiers make the replacement traceable and repeatable.
+- A successful replacement bumps Redis map and search cache versions when a write token is configured.
+
+See [`supabase/scripts/README.md`](supabase/scripts/README.md) for replacement and
+pre-production full-reset options.
 
 ## API overview
 
@@ -390,14 +395,14 @@ server/repositories/  database access
 server/services/      business logic and aggregation
 server/validation/    server request schemas
 supabase/migrations/  ordered database schema changes
-supabase/scripts/     historical data import tools
+supabase/scripts/     reviewed seed replacement tool
 supabase/templates/   hosted Supabase email templates
 __tests__/            Vitest unit and integration-style tests
 ```
 
 ## Production checklist
 
-1. Apply all Supabase migrations and confirm migration history through `20260715120000`.
+1. Apply all Supabase migrations and confirm migration history through `20260715150000`.
 2. Set production Supabase, application URL, and map environment variables.
 3. Configure production auth callback URLs and email delivery.
 4. Configure both Upstash read and write tokens.
