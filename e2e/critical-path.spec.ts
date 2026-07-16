@@ -13,7 +13,7 @@ async function signIn(browser: Browser, email: string, password: string) {
   const page = await context.newPage();
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
+  await page.locator("#sign-in-password").fill(password);
   await page.getByRole("button", { name: /sign in/i }).click();
   await expect(page).not.toHaveURL(/\/login/);
   return { context, page };

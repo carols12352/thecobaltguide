@@ -116,18 +116,17 @@ describe("transactional report workflow", () => {
     expect(reports.count).toBe(1);
   });
 
-  it("deletes the report and reverses its contribution atomically", async () => {
+  it("marks the report removed and reverses its contribution atomically", async () => {
     const deleted = await admin.rpc("delete_own_report_transactional", {
       p_report_id: reportId!, p_user_id: userId,
     });
     if (deleted.error) throw deleted.error;
-    reportId = undefined;
     const profile = await admin.from("profiles").select("report_count,reputation_score").eq("id", userId).single();
     expect(profile.data).toMatchObject({
       report_count: initialReportCount,
       reputation_score: initialReputationScore,
     });
-    const report = await admin.from("multiplier_reports").select("id").eq("place_id", placeId).maybeSingle();
-    expect(report.data).toBeNull();
+    const report = await admin.from("multiplier_reports").select("status").eq("id", reportId).single();
+    expect(report.data?.status).toBe("removed");
   });
 });
