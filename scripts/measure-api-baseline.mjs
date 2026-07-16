@@ -77,7 +77,7 @@ const percentile = (values, quantile) =>
 
 for (const path of paths) {
   const durations = [];
-  let serverTiming = null;
+  const observations = [];
   let cacheControl = null;
   for (let index = 0; index < samples; index++) {
     const startedAt = performance.now();
@@ -86,18 +86,33 @@ for (const path of paths) {
       headers: requestHeaders,
       redirect: "error",
     });
-    durations.push(performance.now() - startedAt);
-    serverTiming = response.headers.get("server-timing");
-    cacheControl = response.headers.get("cache-control");
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
     await response.arrayBuffer();
+    durations.push(performance.now() - startedAt);
+    cacheControl = response.headers.get("cache-control");
+    observations.push({
+      cacheStatus: response.headers.get("x-vercel-cache"),
+      ageSeconds: response.headers.get("age"),
+      serverTiming: response.headers.get("server-timing"),
+    });
   }
+  const warmDurations = durations.slice(1);
+  const first = observations[0];
+  const last = observations.at(-1);
   console.log(JSON.stringify({
     path,
     samples,
+    firstMs: Math.round(durations[0]),
     p50Ms: Math.round(percentile(durations, 0.5)),
     p95Ms: Math.round(percentile(durations, 0.95)),
+    warmP50Ms: Math.round(percentile(warmDurations, 0.5)),
+    warmP95Ms: Math.round(percentile(warmDurations, 0.95)),
     cacheControl,
-    lastServerTiming: serverTiming,
+    firstCacheStatus: first?.cacheStatus ?? null,
+    lastCacheStatus: last?.cacheStatus ?? null,
+    firstAgeSeconds: first?.ageSeconds ?? null,
+    lastAgeSeconds: last?.ageSeconds ?? null,
+    firstServerTiming: first?.serverTiming ?? null,
+    lastServerTiming: last?.serverTiming ?? null,
   }));
 }

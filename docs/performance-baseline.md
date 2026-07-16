@@ -25,12 +25,15 @@ Run against the environment being evaluated:
 BASELINE_BASE_URL=https://preview.example.com npm run baseline:api
 ```
 
-The command prints JSON lines with request count, p50/p95 wall time,
-`Cache-Control`, and the latest `Server-Timing` breakdown. Save the output with
-the release evidence rather than committing environment-specific values. Use at
-least 20 warm samples and compare the same paths, region, database size, and
-cache state. A topology change requires evidence from this measurement plus the
-Sentry `map.query.duration_ms` and Redis hit/miss metrics.
+The command prints JSON lines with full-response wall time for the first request,
+overall p50/p95, and warm p50/p95 for samples 2–N. It also records
+`Cache-Control`, first/last `x-vercel-cache` and `age` values, and first/last
+`Server-Timing` breakdowns. The first request is observational and is not
+guaranteed to be a cold cache hit. Save the output with the release evidence
+rather than committing environment-specific values. Use at least 20 samples and
+compare the same paths, region, database size, and cache state. A topology change
+requires evidence from this measurement plus the Sentry `map.query.duration_ms`
+and Redis hit/miss metrics.
 
 ## GitHub Actions
 

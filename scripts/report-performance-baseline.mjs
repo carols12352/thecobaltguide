@@ -4,6 +4,10 @@ const resultPath = "performance-baseline.jsonl";
 const outcome = process.env.BASELINE_OUTCOME ?? "unknown";
 const target = process.env.BASELINE_URL ?? "unknown target";
 const escapeCell = (value) => String(value ?? "—").replaceAll("|", "\\|").replace(/[\r\n]+/g, " ");
+const withSuffix = (value, suffix) => value == null ? "—" : `${escapeCell(value)}${suffix}`;
+const transition = (first, last, suffix = "") =>
+  `${withSuffix(first, suffix)} → ${withSuffix(last, suffix)}`;
+const latencyPair = (p50, p95) => `${p50} / ${p95} ms`;
 
 let markdown = `## Performance baseline ${outcome === "success" ? "✅" : "❌"}\n\n`;
 markdown += `Target: ${escapeCell(target)}\n\n`;
@@ -11,10 +15,16 @@ markdown += `Target: ${escapeCell(target)}\n\n`;
 const resultText = existsSync(resultPath) ? readFileSync(resultPath, "utf8").trim() : "";
 if (resultText) {
   const rows = resultText.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
-  markdown += "| API path | Samples | p50 | p95 | Cache-Control | Server-Timing |\n";
-  markdown += "| --- | ---: | ---: | ---: | --- | --- |\n";
+  markdown += "| API path | Samples | First | Overall p50 / p95 | Warm p50 / p95 | CDN first → last | Age first → last |\n";
+  markdown += "| --- | ---: | ---: | ---: | ---: | --- | --- |\n";
   for (const row of rows) {
-    markdown += `| ${escapeCell(row.path)} | ${row.samples} | ${row.p50Ms} ms | ${row.p95Ms} ms | ${escapeCell(row.cacheControl)} | ${escapeCell(row.lastServerTiming)} |\n`;
+    markdown += `| ${escapeCell(row.path)} | ${row.samples} | ${row.firstMs} ms | ${latencyPair(row.p50Ms, row.p95Ms)} | ${latencyPair(row.warmP50Ms, row.warmP95Ms)} | ${transition(row.firstCacheStatus, row.lastCacheStatus)} | ${transition(row.firstAgeSeconds, row.lastAgeSeconds, "s")} |\n`;
+  }
+
+  markdown += "\n| API path | Cache-Control | Server-Timing first | Server-Timing last |\n";
+  markdown += "| --- | --- | --- | --- |\n";
+  for (const row of rows) {
+    markdown += `| ${escapeCell(row.path)} | ${escapeCell(row.cacheControl)} | ${escapeCell(row.firstServerTiming)} | ${escapeCell(row.lastServerTiming)} |\n`;
   }
 } else {
   markdown += "The measurement did not produce a result file. Open the workflow run for the failure details.\n";
