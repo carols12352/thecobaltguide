@@ -29,7 +29,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request &&
-       startsWith(github.event.comment.body, '/performance-baseline ') &&
+       (startsWith(github.event.comment.body, '/performance ') ||
+        startsWith(github.event.comment.body, '/performance-baseline ')) &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     timeout-minutes: 10

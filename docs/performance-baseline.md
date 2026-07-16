@@ -37,9 +37,11 @@ Sentry `map.query.duration_ms` and Redis hit/miss metrics.
 Maintainers, organization members, and repository collaborators can run the
 dedicated workflow in either of these ways:
 
-- Comment on a pull request: `/performance-baseline https://preview.example.com`
-- Optionally choose 5–100 samples: `/performance-baseline https://preview.example.com 30`
+- Comment on a pull request: `/performance https://preview.example.com`
+- Optionally choose 5–100 samples: `/performance https://preview.example.com 30`
 - Open Actions → Performance baseline → Run workflow and enter the target URL.
+
+The longer `/performance-baseline` command remains available as an alias.
 
 PR-triggered runs reply with a result table and workflow link. Every run also
 writes the table to the job summary and retains the JSONL result as an artifact

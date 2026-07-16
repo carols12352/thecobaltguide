@@ -15,9 +15,9 @@ if (isManual) {
   samples = event.inputs?.samples?.trim() || "20";
 } else {
   const firstLine = String(event.comment?.body ?? "").split(/\r?\n/, 1)[0].trim();
-  const match = firstLine.match(/^\/performance-baseline\s+(\S+)(?:\s+(\d+))?\s*$/i);
+  const match = firstLine.match(/^\/(?:performance|performance-baseline)\s+(\S+)(?:\s+(\d+))?\s*$/i);
   if (!match) {
-    throw new Error("Use /performance-baseline <url> [samples]");
+    throw new Error("Use /performance <url> [samples]");
   }
   targetUrl = match[1];
   samples = match[2] ?? "20";
