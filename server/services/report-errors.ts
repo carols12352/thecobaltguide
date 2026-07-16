@@ -1,8 +1,10 @@
-export class ReportPlaceDailyLimitError extends Error {
+import { ServiceError } from "@/server/services/service-error";
+
+export class ReportPlaceDailyLimitError extends ServiceError {
   constructor(
     message = "You already submitted a report for this merchant today. Try again tomorrow.",
   ) {
-    super(message);
+    super("CONFLICT", message, 409);
     this.name = "ReportPlaceDailyLimitError";
   }
 }

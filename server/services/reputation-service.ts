@@ -9,10 +9,11 @@ import {
 } from "@/lib/reputation/scoring";
 import { userRepository } from "@/server/repositories/flag-repository";
 import type { ReportKind } from "@/types/domain";
+import { ServiceError } from "@/server/services/service-error";
 
-export class ReputationBlockedError extends Error {
+export class ReputationBlockedError extends ServiceError {
   constructor(message = REPUTATION_BLOCKED_MESSAGE) {
-    super(message);
+    super("FORBIDDEN", message, 403);
     this.name = "ReputationBlockedError";
   }
 }

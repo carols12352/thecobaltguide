@@ -1,6 +1,5 @@
 import {
   jsonCreated,
-  jsonError,
   jsonOk,
   jsonRateLimited,
   jsonUnauthorized,
@@ -12,7 +11,7 @@ import {
   checkUserPlaceRateLimit,
   getClientIp,
 } from "@/lib/rate-limit";
-import { captureException } from "@/lib/monitoring/sentry";
+import { mutationRouteError } from "@/lib/api/mutation-error";
 import { placeService } from "@/server/services/place-service";
 import { createPlaceSchema } from "@/server/validation/schemas";
 
@@ -45,7 +44,9 @@ export async function POST(request: Request) {
     return jsonCreated({ created: true, placeId: result.place.id });
   } catch (error) {
     if (error instanceof AuthError) return jsonUnauthorized(error.message);
-    captureException(error, { route: "POST /api/places" });
-    return jsonError("Failed to create place", 500);
+    return mutationRouteError(error, {
+      route: "POST /api/places",
+      fallbackMessage: "Failed to create place",
+    });
   }
 }

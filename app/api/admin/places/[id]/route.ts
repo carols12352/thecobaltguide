@@ -1,6 +1,5 @@
 import {
   jsonAdmin,
-  jsonError,
   jsonForbidden,
   jsonNotFound,
   jsonUnauthorized,
@@ -9,6 +8,7 @@ import {
 import { adminRouteError } from "@/lib/api/admin-route-error";
 import { AuthError, requireModerator } from "@/lib/auth/session";
 import { captureException } from "@/lib/monitoring/sentry";
+import { mutationRouteError } from "@/lib/api/mutation-error";
 import { moderationService } from "@/server/services/moderation-service";
 import { adminPlacePatchSchema } from "@/server/validation/schemas";
 
@@ -60,7 +60,9 @@ export async function PATCH(
         ? jsonForbidden(error.message)
         : jsonUnauthorized(error.message);
     }
-    captureException(error, { route: "PATCH /api/admin/places/:id" });
-    return jsonError("Failed to update place", 500);
+    return mutationRouteError(error, {
+      route: "PATCH /api/admin/places/:id",
+      fallbackMessage: "Failed to update place",
+    });
   }
 }

@@ -52,9 +52,14 @@ export function jsonCreated<T>(data: T) {
   return NextResponse.json(data, { status: 201 });
 }
 
-export function jsonError(message: string, status: number, details?: unknown) {
+export function jsonError(
+  message: string,
+  status: number,
+  details?: unknown,
+  code?: string,
+) {
   return NextResponse.json(
-    { error: message, ...(details ? { details } : {}) },
+    { error: message, ...(code ? { code } : {}), ...(details ? { details } : {}) },
     { status },
   );
 }
@@ -72,12 +77,12 @@ export function jsonNotFound(message = "Not found") {
 }
 
 export function jsonValidationError(details: unknown) {
-  return jsonError("Validation failed", 422, details);
+  return jsonError("Validation failed", 422, details, "VALIDATION_ERROR");
 }
 
 export function jsonRateLimited(resetAt: number) {
   return NextResponse.json(
-    { error: "Rate limit exceeded", resetAt },
+    { error: "Rate limit exceeded", code: "RATE_LIMITED", resetAt },
     { status: 429 },
   );
 }

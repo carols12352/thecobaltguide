@@ -55,3 +55,6 @@ next-env.d.ts
 
 # turbo / build artifacts
 .turbo
+
+# local commit helper
+/scripts/commit-segmented.sh

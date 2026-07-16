@@ -81,6 +81,13 @@ Supabase PostgreSQL
 
 Browser-facing helpers live in `lib/`, reusable UI in `components/`, and database schema changes in `supabase/migrations/`.
 
+Provider transport and database mutations have focused boundaries:
+
+- `server/geocoding/provider-client.ts` owns Mapbox/Nominatim HTTP policy and mapping; the geocoding service owns orchestration and ranking.
+- `place-write-repository.ts` owns place creation/duplicate lookup, while `moderation-write-repository.ts` owns moderator place and audit writes.
+- Expected mutation failures use stable response codes such as `VALIDATION_ERROR`, `CONFLICT`, `FORBIDDEN`, and `NOT_FOUND`; the existing `error` message remains backward-compatible.
+- Transactional moderation is state-idempotent, and a duplicate same-user/place/day report returns HTTP 409 without a second write.
+
 ### Map loading and caching
 
 Map loading is split into two requests so exact counts do not block cached map points:
@@ -257,6 +264,10 @@ directory remains ignored separately and must not be committed.
 | `npm run typecheck` | Run TypeScript without emitting files |
 | `npm test` | Run the Vitest suite once |
 | `npm run test:watch` | Run Vitest in watch mode |
+| `npm run test:rls` | Run the live Supabase RLS/grant suite |
+| `npm run test:integration` | Run live transactional workflow tests against local/disposable Supabase |
+| `npm run test:e2e` | Run the fixture-backed Chromium critical path |
+| `npm run baseline:api` | Record API p50/p95, cache headers, and Server-Timing for an environment |
 | `npm run replace:rewards-canada` | Validate and preview the reviewed local seed |
 | `npm run replace:rewards-canada -- --apply --replace` | Atomically replace the Rewards Canada database seed |
 | `./scripts/commit-segmented.sh --dry-run` | Preview segmented commits for the current working tree |
@@ -270,6 +281,22 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+For local Stage B suites, start and reset Supabase first. The E2E journey
+requires `E2E_USER_EMAIL`, `E2E_USER_PASSWORD`, `E2E_MODERATOR_EMAIL`,
+`E2E_MODERATOR_PASSWORD`, and `E2E_PLACE_ID`; it skips without all five
+values. Install its browser once with `npx playwright install chromium`.
+
+GitHub Actions does not require those variables or repository secrets:
+[`rls-tests.yml`](.github/workflows/rls-tests.yml) runs the RLS and transactional
+suites in its own workflow, while
+[`e2e-tests.yml`](.github/workflows/e2e-tests.yml) starts a separate local
+Supabase stack, creates disposable fixture users/place, installs Chromium, and
+uploads Playwright artifacts. Both workflows support push, pull request, and
+manual dispatch. See
+[`docs/performance-baseline.md`](docs/performance-baseline.md) for comparable
+query/cache measurements and the maintainer-only
+`/performance-baseline <url> [samples]` PR comment command.
 
 ## Rewards Canada seed replacement
 
@@ -391,13 +418,15 @@ app/                  pages and API route handlers
 components/           map, auth, account, admin, place, and UI components
 config/               application constants and category definitions
 lib/                  auth, cache, geocoding, map, reputation, validation, and utilities
-server/repositories/  database access
+server/repositories/  read facades, focused writes, and transactional database access
+server/geocoding/     third-party provider transport and response mapping
 server/services/      business logic and aggregation
 server/validation/    server request schemas
 supabase/migrations/  ordered database schema changes
 supabase/scripts/     reviewed seed replacement tool
 supabase/templates/   hosted Supabase email templates
 __tests__/            Vitest unit and integration-style tests
+e2e/                  Playwright critical-path tests
 ```
 
 ## Production checklist
