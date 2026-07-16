@@ -35,6 +35,8 @@ describe("transactional report workflow", () => {
   let placeId: string;
   let cardId: string;
   let reportId: string | undefined;
+  let initialReportCount = 0;
+  let initialReputationScore = 0;
 
   beforeAll(async () => {
     const created = await admin.auth.admin.createUser({
@@ -72,6 +74,9 @@ describe("transactional report workflow", () => {
 
   it("commits report, profile and summary as one action", async () => {
     const before = await admin.from("profiles").select("report_count,reputation_score").eq("id", userId).single();
+    if (before.error) throw before.error;
+    initialReportCount = before.data.report_count ?? 0;
+    initialReputationScore = before.data.reputation_score ?? 0;
     const submitted = await admin.rpc("submit_report_transactional", {
       p_place_id: placeId,
       p_user_id: userId,
@@ -80,7 +85,7 @@ describe("transactional report workflow", () => {
       p_transaction_date: new Date().toISOString().slice(0, 10),
       p_payment_context: "in_store",
       p_notes: null,
-      p_report_kind: "confirm",
+      p_report_kind: "error",
     });
     if (submitted.error) throw submitted.error;
     reportId = (submitted.data as { id: string }).id;
@@ -89,8 +94,8 @@ describe("transactional report workflow", () => {
     const summary = await admin.from("place_multiplier_summaries")
       .select("current_multiplier,recent_report_count")
       .eq("place_id", placeId).eq("card_product_id", cardId).single();
-    expect(profile.data?.report_count).toBe((before.data?.report_count ?? 0) + 1);
-    expect(profile.data?.reputation_score).toBe((before.data?.reputation_score ?? 0) + 1);
+    expect(profile.data?.report_count).toBe(initialReportCount + 1);
+    expect(profile.data?.reputation_score).toBe(initialReputationScore);
     expect(summary.data).toMatchObject({ current_multiplier: "5", recent_report_count: 1 });
   });
 
@@ -103,7 +108,7 @@ describe("transactional report workflow", () => {
       p_transaction_date: new Date().toISOString().slice(0, 10),
       p_payment_context: "in_store",
       p_notes: null,
-      p_report_kind: "confirm",
+      p_report_kind: "error",
     });
     expect(repeated.error?.code).toBe("23505");
     const reports = await admin.from("multiplier_reports").select("id", { count: "exact" })
@@ -118,7 +123,10 @@ describe("transactional report workflow", () => {
     if (deleted.error) throw deleted.error;
     reportId = undefined;
     const profile = await admin.from("profiles").select("report_count,reputation_score").eq("id", userId).single();
-    expect(profile.data).toMatchObject({ report_count: 0, reputation_score: 0 });
+    expect(profile.data).toMatchObject({
+      report_count: initialReportCount,
+      reputation_score: initialReputationScore,
+    });
     const report = await admin.from("multiplier_reports").select("id").eq("place_id", placeId).maybeSingle();
     expect(report.data).toBeNull();
   });
