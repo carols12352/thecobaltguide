@@ -1,381 +1,285 @@
-# Cobalt Merchant Map — Architecture and Feature Readiness
+# Cobalt Merchant Map — Architecture
 
-> Status: code assessment and Stage B implementation updated 2026-07-16; primary hosted-database assessment last verified 2026-07-14.
+> Last reviewed: 2026-07-16 against `main` at `836667b` before this documentation/code-organization change.
 >
-> Source of truth: application code and `supabase/migrations/`; this document records the current implementation and the gates for adding product scope.
+> Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, known gaps, and the next planned milestone.
 
-## 1. Executive decision
+## 1. Architecture decision
 
-The application should remain a **modular monolith**:
+The application is a **modular monolith**:
 
 - Next.js App Router serves pages and Route Handler APIs.
-- Server services coordinate business rules, caching, and repositories.
+- Services own business rules, orchestration, aggregation, and cache coordination.
+- Repositories own Supabase queries and transactional PostgreSQL RPC calls.
 - Supabase provides Auth, PostgreSQL, PostGIS, and Row Level Security (RLS).
-- Upstash Redis is optional and provides distributed cache and rate limiting when configured.
-- Geocoding is performed synchronously against Mapbox and Nominatim.
+- Upstash Redis is optional for distributed cache and rate limiting.
+- Mapbox and Nominatim provide synchronous geocoding behind one provider boundary.
 
-There is no current code or operational evidence that justifies microservices, read replicas, a dedicated search service, vector tiles, Kubernetes, or a separately deployed API. Those are not roadmap commitments.
+One deployable application is the right topology for the current product, team, and transaction model. There is no measured need for microservices, Kubernetes, a read replica, a dedicated search service, or vector tiles.
 
-The product is technically ready for small, isolated UI and read-only improvements. Before expanding write-heavy, privacy-sensitive, or operationally complex features, the P0 items in [Section 6](#6-feature-expansion-gates) should be completed.
-
-### Current snapshot
+## 2. Current snapshot
 
 | Measure | Current state |
 | --- | --- |
-| TypeScript/TSX size | About 17.5k lines |
-| Server layer | About 3.9k lines |
+| TypeScript/TSX | About 18.2k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Automated tests | See the verified baseline in [Section 12](#12-verification-baseline); 16 live RLS/grant and 3 transactional tests are defined |
-| CI | Core CI runs lint, typecheck, unit tests, and build; separate workflows run live local RLS/transaction tests, Playwright E2E, and maintainer-triggered performance baselines |
-| Integration/E2E tests | Live RLS matrix, transactional report workflow integration tests, and an environment-backed Playwright critical path are present |
-| Production error monitoring | Sentry server SDK, Next.js request-error hook, traces, and structured operational metrics are wired; production requires Sentry environment variables and alert configuration |
-| RLS lockdown | Corrective migrations `20260714120000`–`20260714170000` are applied and verified on the primary hosted project; they enforce explicit policies, grants, function ACLs, safe defaults, bounded public RPCs, and removal of unused legacy RPCs |
+| Unit baseline | 44 files / 231 Vitest tests |
+| Live database coverage | 16 RLS/grant tests and 3 transactional integration tests defined |
+| Browser coverage | One environment-backed Playwright critical path |
+| CI | Lint, typecheck, unit tests, build, live database suites, E2E, and on-demand performance baseline workflows |
+| Monitoring | Sentry server integration plus structured operational logs; deployment alert configuration remains external |
 
-These numbers are a point-in-time aid, not architectural targets.
+These numbers are a point-in-time orientation aid, not architecture targets.
 
-## 2. Current runtime architecture
+## 3. Runtime context
 
 ```text
 Browser
-  ├─ Next.js pages and client components
+  ├─ Server-rendered pages and client components
   ├─ Supabase Auth client
   └─ /api/* requests
           │
           ▼
 Next.js modular monolith
-  ├─ Route Handlers: auth, validation, HTTP responses
-  ├─ Services: orchestration, aggregation, moderation, caching
-  ├─ Repositories: Supabase queries and PostGIS RPC calls
-  └─ Geocoding adapters: Mapbox and Nominatim
+  ├─ Route Handlers: auth, input validation, HTTP response contracts
+  ├─ Services: domain orchestration, aggregation, caching
+  ├─ Repositories: Supabase reads/writes and Postgres RPCs
+  └─ Geocoding provider client: Mapbox/Nominatim transport policy
           │
           ├──────────────► Upstash Redis (optional)
-          │                 cache and distributed rate limits
+          │                 cache and distributed limits
           ▼
 Supabase
   ├─ Auth
   ├─ PostgreSQL + PostGIS
-  └─ RLS
+  └─ RLS, grants, and function ACLs
 ```
 
-The deployment target documented by the project is Vercel or another Node.js 22+ host. Native Vercel Git deployments are disabled in `vercel.json`; GitHub Actions is the only automatic deployment path and creates one Vercel Preview when a same-repository pull request is opened against `main`, and one for each direct push to `main`. Later commits on an already-open pull request do not redeploy it. The `release` branch is excluded from automated deployment and currently contains the static Under Production shell for a separately managed production release. Cloudflare, PostHog, Resend, background workers, and Sentry are either optional configuration or unimplemented; they are not part of the guaranteed current architecture.
-
-### Request layering
-
-The dominant path is:
+The normal server dependency direction is:
 
 ```text
-app/api/*/route.ts
-        → server/services/*
-        → server/repositories/*
-        → Supabase
+app/api/*/route.ts → server/services/* → server/repositories/* → Supabase
 ```
 
-This boundary is enforced for newly touched mutation code. Geocoding provider HTTP access lives in `server/geocoding/provider-client.ts`; place and moderation writes live in focused repositories. `summary-service.ts` retains one direct admin-client query and should move when that workflow is next changed.
+Routes authenticate, validate with Zod, and translate errors to stable HTTP responses. Services must not depend on route modules. Repositories must not contain UI or HTTP response logic.
 
-## 3. Implemented product modules
+## 4. Code ownership
 
-| Module | Implemented behavior | Primary code |
-| --- | --- | --- |
-| Map discovery | Viewport grid loading, wider-view clustering data, exact viewport count/list supplement, filters, distance sorting | `components/map/merchant-map.tsx`, `place-service.ts`, PostGIS RPC migrations |
-| Places | Search, detail, duplicate detection, authenticated creation | `place-service.ts`, `place-repository.ts` |
-| Reports | 1x/2x/3x/5x submissions, report classification, recency aggregation, grouped public history, limited self-removal | `report-service.ts`, `summary-service.ts`, `aggregation.ts` |
-| Flags and moderation | Place flags, grouped review, report approval/removal, place editing/merging, user administration, audit rows | `moderation-service.ts`, `flag-repository.ts`, admin routes |
-| Reputation | Score changes for submissions and moderation outcomes; low-score submission block | `reputation-service.ts`, `lib/reputation/scoring.ts` |
-| Accounts and auth | Supabase email/password, magic link, Google, account history, roles and suspension | `lib/auth/*`, account routes and components |
-| Geocoding | Structured and reverse lookup using Mapbox and Nominatim; result ranking and city filtering | `geocoding-service.ts`, `lib/geocoding/*` |
-| Cache and limits | CDN headers, Redis read/write caches, version-based invalidation, Redis/in-memory rate limits | `lib/cache/*`, `lib/rate-limit/*` |
-
-The system supports one active product experience, Amex Cobalt, although reports and summaries already carry `card_product_id`.
-
-## 4. Data, API, and consistency model
-
-### Core tables
-
-The migration history currently defines:
-
-- `profiles`: application role, status, reputation, and report count.
-- `merchant_brands`: optional shared brand metadata.
-- `card_products`: card identity; seeded with `amex-cobalt-ca`.
-- `places`: one physical merchant location with a PostGIS geography point.
-- `multiplier_reports`: raw community reports and moderation state.
-- `place_multiplier_summaries`: precomputed result per place/card.
-- `merchant_multiplier_coverages`: non-point merchant coverage by city, province, or country.
-- `online_merchant_multipliers`: online-only merchants kept off the physical map.
-- `place_flags`: community corrections and review state.
-- `moderation_logs`: staff action audit rows.
-- `rewards_canada_place_import_stage` and `rewards_canada_online_import_stage`:
-  service-role-only staging for a validated, atomic seed replacement.
-- `lookup_auth_account_hints(text)`: service-role-only database function used by sign-in flows.
-
-`supabase/migrations/` is authoritative for schema and RLS. TypeScript domain types are application projections and must be updated with migrations.
-
-### API groups
-
-| Access | Routes |
+| Area | Responsibility |
 | --- | --- |
-| Public reads | cards, place detail/reports/search/map/viewport, geocode/reverse geocode |
-| Authenticated user | create place, submit/delete own report, submit flag, account report/flag lists |
-| Moderator | report and flag queues/actions, place lookup/edit/merge |
-| Administrator | user lookup and role/status/reputation changes |
+| `app/` | App Router pages, layouts, loading UI, and Route Handlers |
+| `components/` | Feature UI and reusable controls |
+| `config/` | Product constants and merchant categories |
+| `lib/` | Shared/browser-safe domain, cache, auth, map, and validation helpers |
+| `server/services/` | Business rules and use-case orchestration |
+| `server/repositories/` | Database projections, writes, and transactional boundaries |
+| `server/geocoding/` | Third-party provider transport and mapping |
+| `server/validation/` | Server request schemas |
+| `supabase/migrations/` | Authoritative schema, functions, grants, RLS, and indexes |
+| `supabase/scripts/` | Explicit operational data tooling, not application runtime |
+| `__tests__/`, `supabase/tests/`, `e2e/` | Unit, live database, and browser verification |
 
-Authorization is checked in Route Handlers with `requireAuth`, `requireModerator`, or `requireAdmin`. Validation uses Zod schemas before service calls.
+Large interactive components may keep local API models and presentation-only pieces beside the owning component. Shared product types belong in `types/domain.ts`; server-only database row shapes stay in repositories.
 
-### Map read path
+## 5. Product modules
 
-1. `/api/places/map` aligns and pads the viewport into a cache grid.
+| Module | Implemented behavior | Main owners |
+| --- | --- | --- |
+| Map discovery | Aligned viewport grids, clustering data, exact count/list supplement, filters and distance sorting | `merchant-map.tsx`, `place-service.ts`, PostGIS RPCs |
+| Places | Search, detail, duplicate detection, authenticated creation | place service/repositories |
+| Reports | Submission, classification, aggregation, grouped history, limited self-removal | report/summary services and transaction repository |
+| Flags/moderation | Grouped flags, report review, place editing/merging, user administration, audit rows | moderation service and repositories |
+| Reputation | Submission and moderation score changes, low-score write block | reputation service and scoring helpers |
+| Accounts/auth | Supabase sign-in methods, roles, suspension, recent activity | auth helpers, account routes/components |
+| Geocoding | Structured/reverse lookup, provider ranking, city filtering, fallback | geocoding service/provider client |
+| Cache/limits | CDN headers, Redis cache, version invalidation, Redis/in-memory quotas | cache and rate-limit helpers |
+
+The schema carries `card_product_id`, but the current product experience and fixtures prove only one active product: Amex Cobalt.
+
+## 6. Data, consistency, and security
+
+### Core data
+
+- `profiles`: role, status, reputation, and contribution counts.
+- `merchant_brands`: optional shared merchant identity.
+- `card_products`: card definitions; seeded with Amex Cobalt.
+- `places`: physical locations with PostGIS geography.
+- `multiplier_reports`: raw community evidence and moderation state.
+- `place_multiplier_summaries`: precomputed place/card result.
+- `merchant_multiplier_coverages`: non-point geographic coverage.
+- `online_merchant_multipliers`: online-only merchants.
+- `place_flags`: community corrections.
+- `moderation_logs`: staff audit trail.
+- Rewards Canada staging tables: service-role-only input to atomic replacement.
+
+Migrations are append-only and authoritative. Application projections must be updated with schema changes.
+
+### Authorization boundary
+
+- Public reads expose bounded API projections, not raw tables.
+- User writes require `requireAuth`; staff operations require `requireModerator` or `requireAdmin`.
+- Zod validates request input before service calls.
+- Corrective migrations `20260714120000`–`20260714170000` enforce least privilege through RLS, grants, function ACLs, bounded public RPCs, and removal of unused legacy functions.
+- Secret/service-role credentials remain server-only.
+
+### Atomic workflows
+
+Migration `20260715120000_transactional_write_workflows.sql` defines service-role-only transactional functions for:
+
+- report submission/deletion with profile and summary changes;
+- report moderation with reputation, review metadata, and audit rows;
+- grouped place-flag resolution with per-reporter reputation changes;
+- place merging with report/flag reassignment, source status, summaries, and audit rows.
+
+Expected mutation failures use stable codes such as `VALIDATION_ERROR`, `CONFLICT`, `FORBIDDEN`, and `NOT_FOUND`. Repeated state transitions are idempotent where required; a duplicate same-user/place/day report returns HTTP 409 without a second write.
+
+Cache invalidation is best-effort after the authoritative transaction commits. Any future asynchronous authoritative work must use a durable outbox/job record, not an untracked background promise.
+
+## 7. Read and cache paths
+
+### Map reads
+
+1. `GET /api/places/map` aligns and pads the viewport into a reusable grid.
 2. Redis is checked when configured.
-3. A bounded PostGIS RPC returns at most 200 neighbourhood places or 500 wider-view cluster points.
-4. `/api/places/viewport` optionally obtains an exact count and bounded distance-sorted list.
-5. Public responses use short CDN caching; Redis data uses longer TTLs.
-6. Mutations bump cache versions and invalidate affected detail/admin/account entries.
+3. A bounded PostGIS RPC returns up to 200 neighbourhood points or 500 wider-view cluster points.
+4. `GET /api/places/viewport` optionally adds an exact count and bounded distance-sorted list.
+5. The client filters loaded points while moving and requests a new grid only after crossing cached bounds.
 
-This is already an appropriate scale-first design. Query plans, cache hit rates, and production latency should be measured before changing the topology.
+### Cache policy
 
-### Rewards Canada seed replacement
+| Data | CDN TTL | Redis TTL |
+| --- | ---: | ---: |
+| Grid map region | 120 seconds | 24 hours |
+| Viewport details | 60 seconds | 5 minutes |
+| Place detail | 120 seconds | 24 hours |
+| Search | 120 seconds | 5 minutes |
 
-The corrected initial dataset is maintained as one ignored local reviewed JSON,
-not as a runtime fetch or scheduled job:
+Global cache versions allow mutations to bypass stale map/search data without scanning Redis keys. Without Redis, the application remains functional; reads go to Supabase and rate limiting becomes process-local.
 
-```text
-reviewed JSON
-  → Zod validation and reviewed name/channel rules
-  → deterministic duplicate removal
-  → service-role-only staging tables in bounded batches
-  → one PostgreSQL transaction replaces seed places, summaries, and online rows
-```
+Public map responses expose `Server-Timing` for Redis and database diagnosis. Repeatable sampling is documented in `docs/performance-baseline.md`.
 
-Physical places use stable `rewards-canada:` external identifiers. Online-only
-merchants are stored separately, while review queues and rejected candidates
-never enter staging. The database validates expected row counts and refuses a
-destructive replacement when seed places have community reports, flags, or
-moderation history unless the operator explicitly permits that pre-production
-cascade. The cascade removes related polymorphic audit references and adjusts
-affected profile contribution counters before the foreign-key deletes. A failed
-upload or transaction leaves the prior seed intact. After commit, the local
-operator bumps Redis map and search versions when a write token is configured.
+## 8. External systems and deployment
 
-### Report write path
+### Geocoding
 
-The current report flow is synchronous:
+- Geocode routes require authentication and enforce per-IP and per-user quotas.
+- Forward/reverse queries are hashed and cached for one hour.
+- Provider calls use four-second timeouts.
+- Mapbox receives one bounded retry for network/server failures; Nominatim is not retried.
+- Provider failures, duration, timeout, and fallback behavior emit operational metrics.
 
-```text
-authenticate and rate-limit
-  → classify report
-  → transactional RPC inserts the report, updates report count/reputation,
-    and recomputes the summary
-  → invalidate public, account, and admin caches
-```
+### Monitoring
 
-Migration `20260715120000_transactional_write_workflows.sql` makes report submission/deletion, report moderation, place-flag resolution, and place merging atomic. It also keeps summary refresh, reputation changes, review metadata, and moderation audit rows in the same transaction. The RPCs are service-role-only; cache invalidation remains best-effort after commit. The migration must be applied to each hosted environment before the application code that calls these RPCs is deployed.
+The Sentry Next.js server SDK and request-error instrumentation are implemented. Structured JSON logs continue without a DSN. Production readiness still requires deployment credentials, source-map configuration, and owned error-rate/p95 alert thresholds.
 
-Cache invalidation may remain best-effort after commit, but authoritative database changes that form one business action should become atomic.
+### Deployment topology
 
-## 5. What is already strong
+- Vercel or another Node.js 22+ host runs the monolith.
+- GitHub Actions is the only automatic Vercel Preview path; native Vercel Git deployments are disabled.
+- `main` is the preview/development branch covered by the workflow.
+- `release` is excluded and separately managed.
 
-- The route/service/repository shape keeps most HTTP and business concerns separate.
-- PostGIS indexes and bounded viewport RPCs match the map access pattern.
-- Precomputed summaries prevent aggregation on every read.
-- Redis is optional, so cache failure does not make the application unusable.
-- Important domain rules are represented in shared TypeScript and Zod definitions.
-- The database enforces one active report per user/place/UTC day and basic field constraints.
-- CI runs lint, TypeScript, Vitest, and `next build` on pushes and pull requests.
-- Pure aggregation, geocoding parsing, map behavior, cache coordination, reputation, and validation helpers have useful unit coverage.
+The primary hosted database was inspected on 2026-07-14 for the RLS/grant hardening chain. That verification predates `20260715120000`; every target environment must apply the complete chain and run live tests before deployment.
 
-This foundation is sufficient for continued development inside the monolith.
+## 9. Legacy milestones (preserved)
 
-## 6. Feature expansion gates
+Stage A and Stage B are completed historical milestones. Their merge commits are retained and must not be amended, squashed, or relabeled.
 
-### P0 — complete before expanding production write scope
+### Stage A — release safety (legacy)
 
-#### 6.1 Lock down RLS and direct database access
+Merge commit: `0ffe352` (`Merge pull request #3 ... stage-a-release-safety`)
 
-Corrective migrations `20260714120000`–`20260714170000` remove permissive client INSERT/UPDATE paths and public raw profile/report SELECT, define least-privilege table and function grants, make future migration-created objects default-deny, bound public map RPC work, and remove unused legacy RPCs. Application mutations continue through the service-role client; public place report reads use the admin client in `report-repository.findByPlaceId` and return API projections only.
+- Least-privilege RLS, grants, and function ACLs.
+- Live RLS/security tests.
+- Transactional report and moderation writes.
+- Sentry/structured operational instrumentation.
+- Geocoding authentication, quotas, cache, timeout, retry, and fallback.
 
-The primary hosted Supabase project was verified through migration history, a read-only schema dump, and anonymous Data API smoke checks on 2026-07-14. Any additional environment must apply the same full migration chain. Run `npm run test:rls` only against a migrated local or disposable staging database because the suite creates and removes fixtures. The Stage A code is implemented; hosted rollout still requires applying `20260715120000`, configuring Sentry, and running deployment smoke checks.
+The documentation marker `b9792f8` remains part of the same legacy history.
 
-Previously, the initial migration permitted a signed-in user to update their own `profiles` row without limiting writable columns, and authenticated clients could insert places, reports, and flags directly—bypassing Route Handler checks for rate limits, reputation, classification, and cache/summary refresh.
+### Stage B — maintainability (legacy)
 
-#### 6.2 Make authoritative multi-table actions atomic
+Merge commit: `ac122ab` (`Merge pull request #6 ... stage-B-enhancement`)
 
-Implemented in service-role-only transactional PostgreSQL functions in `20260715120000_transactional_write_workflows.sql`:
+- Transactional integration tests and a critical-path E2E suite.
+- Geocoding provider transport split from orchestration.
+- Focused place and moderation write repositories.
+- Stable mutation errors and conflict/idempotency behavior.
+- Repeatable API/cache performance baselines.
 
-- submit/delete report plus profile counter/reputation changes;
-- approve/remove/flag report plus reputation and review metadata;
-- resolve a place's flags plus reporter reputation and report cleanup;
-- merge places plus report/flag reassignment, source status, summary, and audit log.
+The documentation commit `75133ef` remains part of the same legacy history.
 
-Summary refresh is included in the transaction at current volume. Repeated report approval does not apply reputation twice, and repeated flag resolution has no open rows to reward twice. If summary refresh later becomes asynchronous, use a durable outbox/job record rather than an untracked fire-and-forget call.
+These labels describe completed history only. New work must use a new milestone name.
 
-#### 6.3 Connect real production observability
+## 10. Next-step plan: Stage C
 
-`@sentry/nextjs` is initialized through the Next.js instrumentation hook, and caught route errors use the shared capture helper. Structured logs and trace/metric breadcrumbs cover:
+Stage C is intentionally ordered. Finish operational evidence and remaining high-value boundaries before broadening product scope.
 
-- captured server exceptions with route and operation context;
-- API error rate and p95 latency;
-- map/PostGIS query duration and Redis hit/miss rate;
-- geocoding provider failures, timeouts, and usage;
-- report/flag mutation success and summary-refresh failures.
+### C1 — close release evidence
 
-Set `SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, and the CI source-map token in the deployment, then configure error-rate and p95 alerts in Sentry. Without a DSN, structured JSON logs remain available but external alerts do not.
+1. Apply every migration through `20260715150000` to a disposable environment and the intended hosted environment.
+2. Run `test:rls`, `test:integration`, and the Playwright critical path against disposable fixtures.
+3. Configure Sentry source maps and owned error-rate/p95 alerts.
+4. Perform post-deploy smoke checks for auth, map grid/viewport, geocoding quotas/fallback, report submission, moderation, and cache invalidation.
 
-### P1 — strengthen before medium-complexity features
+Exit criteria: migration history is recorded, all live suites pass, alert ownership exists, and smoke evidence is linked from the release record.
 
-#### 6.4 Extend integration and critical-path E2E coverage
+### C2 — reduce measured code hotspots
 
-The live local Supabase suite reapplies the full migration chain and verifies RLS, table grants, function ACLs, inactive-row filtering, and bounded public RPC behavior. Stage B adds a transactional integration suite for report insert/delete, profile and summary consistency, and duplicate-submission conflicts. The opt-in Playwright suite covers sign-in → submit → moderate → account-history using isolated fixture accounts.
+1. Continue splitting `components/admin/admin-dashboard.tsx` by tab as each tab is changed; API models and reusable presentation pieces are already separated.
+2. Split the 700+ line `place-repository.ts` read facade into public-map, public-detail/search, and admin query owners without duplicating query logic.
+3. Move the remaining direct database access in `summary-service.ts` behind a repository boundary.
+4. Add contract tests around each moved projection before removing compatibility exports.
 
-Remaining workflow expansion should verify:
+Exit criteria: dependencies remain route → service → repository, moved behavior has tests, and no compatibility layer is removed without verified callers.
 
-- report submission, classification, aggregation, deletion, and moderation;
-- duplicate-place prevention and place merge rollback behavior;
-- PostGIS viewport boundaries and pagination;
-- cache invalidation after committed mutations.
+### C3 — select one bounded product feature
 
-The browser suite is intentionally environment-backed rather than mocked. Locally it skips when the documented `E2E_*` fixture variables are absent. Its dedicated GitHub workflow starts local Supabase and creates disposable fixtures automatically; it never targets production.
+Choose one feature only after C1. Prefer a bounded public read/filter or focused moderation improvement. For the selected feature, document:
 
-#### 6.5 Protect third-party provider paths
+- owner and authorization rules;
+- data/migration and rollback behavior;
+- transaction/idempotency needs;
+- public/private response fields;
+- query limits, indexes, cache keys, and expected volume;
+- unit, integration, and E2E coverage;
+- observable failures and ongoing provider/moderation cost.
 
-The geocode and reverse-geocode endpoints now require an authenticated session, enforce per-IP and per-user hourly quotas, cache hashed forward/reverse queries for one hour, and apply four-second provider timeouts. Mapbox receives one bounded retry for server/network failures; Nominatim is not retried, and both paths retain provider fallback behavior. Provider duration, status, timeout, and failure metrics are emitted.
+Do not pre-build generic queues, microservices, search clusters, or multi-card UI without a selected use case.
 
-- require an appropriate session where possible;
-- add IP/user quotas and short result caching;
-- add timeouts, bounded retries, and provider-specific error metrics;
-- define a graceful fallback when one or both providers fail.
+## 11. Extraction and scaling triggers
 
-This controls latency, abuse, and Mapbox cost exposure.
+Continue scaling through bounded queries, indexes, cache, and horizontal Next.js instances. Consider a worker or separate service only when production evidence shows at least one of these:
 
-#### 6.6 Reduce internal hotspots without changing deployment topology
+- work exceeds request limits or needs durable retries;
+- one workload requires materially different compute/scaling;
+- provider quotas require centralized scheduling;
+- independent teams require separate ownership/release cadence;
+- security/compliance requires isolated credentials or data;
+- a measured PostgreSQL/search bottleneck cannot be solved reasonably in the existing database.
 
-Stage B completed the first responsibility splits:
+The first likely extraction, if a selected feature needs it, is an asynchronous import/notification worker—not separate place, report, user, and moderation services that currently share transactions.
 
-- `geocoding-service.ts` now orchestrates and ranks while `server/geocoding/provider-client.ts` owns provider transport and response mapping;
-- place creation and duplicate detection live in `place-write-repository.ts`, and moderation place/audit writes live in `moderation-write-repository.ts`;
-- direct database access moved out of `moderation-service.ts`, with typed place-field updates at the repository boundary;
-- `place-repository.ts` remains the compatibility facade for public/admin reads; split those query groups when either is next changed rather than duplicating query logic now;
-- `summary-service.ts` direct access remains the last known layering exception;
-- preserve one directional dependency: route → service → repository/database.
-
-This is modular-monolith cleanup, not a reason to create network services.
-
-### P2 — triggered by a specific feature or measured load
-
-Implement these only when a selected feature requires them:
-
-| Proposed capability | Required foundation |
-| --- | --- |
-| Notifications/email | Durable outbox, retry/idempotency, delivery preferences, unsubscribe/privacy rules |
-| Recurring bulk imports | Job table or worker, idempotent import keys, checkpoints, failure report, provider quotas |
-| Second card product | Product-aware UI/API/cache keys, per-card test fixtures, migration and aggregation verification |
-| Screenshot/OCR | Private object storage, malware/file validation, retention/deletion policy, async processing, moderation cost model |
-| Comments/social features | Abuse tooling, deletion/export policy, notification controls, moderation capacity |
-| Public API or mobile client | Versioned API contract, token scopes, quotas, CORS policy, deprecation policy |
-| High-volume summary refresh | Durable queue/outbox and idempotent worker |
-| Dedicated search | Measured evidence that indexed PostgreSQL search cannot meet the latency/quality target |
-
-## 7. Feature readiness assessment
-
-| Feature class | Readiness | Decision |
-| --- | --- | --- |
-| UI polish and local presentation changes | Ready | Can proceed with existing tests and visual verification |
-| New bounded public read/filter | Mostly ready | Add query/index and response-contract tests; measure payload and latency |
-| New authenticated mutation | Ready with checklist | Use transactional RPC/repository boundaries, stable service errors, and integration coverage |
-| More moderation workflows | Mostly ready | Existing core actions are atomic; add workflow-specific integration tests |
-| More geocoding-dependent behavior | Mostly ready | Provider protection and split are present; verify quota/cost assumptions for each feature |
-| Second card product | Partially ready | Schema supports it; product behavior, cache isolation, and fixtures do not yet prove it |
-| Notifications or scheduled processing | Foundation missing | Add outbox/worker only for the selected feature |
-| Uploads, OCR, social, payments | Out of current scope | Require separate product, privacy, abuse, and cost justification |
-| Microservices | Not justified | Reassess only from measured scaling/team/reliability constraints |
-
-### Definition of ready for a new feature
-
-A feature may enter implementation when:
-
-- its data owner and authorization rules are explicit;
-- direct Supabase access cannot bypass its rules;
-- multi-table writes have a transaction/idempotency design;
-- migration, rollback/repair, and backfill behavior are defined;
-- public/private response fields and retention are documented;
-- expected query volume, indexes, limits, and cache behavior are known;
-- unit plus required integration/E2E tests are identified;
-- failures are observable and have a safe user-facing outcome;
-- ongoing moderation or provider cost has an owner.
-
-Small read-only work does not need heavyweight design. The checklist scales with risk.
-
-## 8. Recommended near-term architecture work
-
-### Stage A — release safety
-
-1. ~~Audit the deployed Supabase grants/RLS and add corrective migrations.~~ **Done** (`20260714120000`–`20260714170000`); the primary hosted project is applied and verified. Apply the full chain to any additional database and verify locally or in disposable staging with `npm run test:rls` (`supabase/tests/README.md`).
-2. ~~Add automated RLS tests before relying on application roles.~~ **Done** (local suite and dedicated CI job).
-3. ~~Convert report and moderation write workflows to transactional database operations.~~ **Implemented** in `20260715120000`; apply and run the 16-test live suite before deployment.
-4. ~~Wire production exception reporting and basic latency/failure telemetry.~~ **Implemented** with Sentry and structured metrics; deployment secrets and alert thresholds remain environment configuration.
-5. ~~Rate-limit and time-bound geocoding calls.~~ **Done** with authentication, dual quotas, hashed caching, provider timeouts/retry policy, fallback, and metrics.
-
-### Stage B — maintainability
-
-1. ~~Add Supabase integration tests and a minimal critical-path E2E suite.~~ **Done** with `npm run test:integration` and the environment-backed `npm run test:e2e` journey.
-2. ~~Split oversized geocoding and place persistence modules along existing responsibilities.~~ **Done** for provider transport, place writes, and moderation writes; the read facade remains compatible and is split-on-touch.
-3. ~~Standardize mutation errors, conflict responses, and idempotency behavior.~~ **Done** with typed `ServiceError`, stable mutation `code` values, `409 CONFLICT` for daily duplicates, and transactional state-idempotency tests/documentation.
-4. ~~Record query and cache baselines so future scaling decisions use evidence.~~ **Done** in `docs/performance-baseline.md` with a repeatable `npm run baseline:api` sampler.
-
-### Stage C — product work
-
-Choose one feature, apply the readiness checklist, and add only the infrastructure it requires. Do not pre-build a generic queue, service mesh, search cluster, or multi-card abstraction without a selected use case.
-
-## 9. Scaling and service extraction criteria
-
-Continue scaling the monolith through bounded queries, indexes, caching, and horizontal Next.js instances. Consider a worker or service boundary only when production evidence shows one of the following:
-
-- a task exceeds request-duration limits or needs durable retries;
-- one workload requires materially different compute or scaling;
-- provider rate limits require centralized scheduling;
-- separate teams need independent ownership and release cadence;
-- a security/compliance boundary requires isolated credentials or data;
-- a measured database/search bottleneck cannot be solved reasonably in PostgreSQL.
-
-The first likely extraction, if ever needed, is an asynchronous import/notification worker—not separate place, report, user, and moderation microservices. Those domains share transactions and one relational model.
-
-## 10. Explicitly removed assumptions
-
-The previous document mixed implemented behavior with speculative recommendations. This revision removes or demotes the following because the code does not establish them as current architecture or committed plans:
-
-- fixed city-by-city rollout phases;
-- assumed Cloudflare, PostHog, Resend, Sentry, preview-environment, and staging-database deployments;
-- generic background-job, read-replica, vector-tile, and dedicated-search roadmaps;
-- a future separate backend presented as an expected destination;
-- comparison with unused database products;
-- repeated MVP and non-goal lists;
-- a hypothetical `src/`, `policies/`, and `jobs/` tree that does not match the repository;
-- suggested cache durations and debounce values that differ from `config/constants.ts`;
-- completed feature descriptions written as future requirements.
-
-Future architecture changes should be added only when supported by code, an accepted feature design, or measured production evidence.
-
-## 11. Architecture principles
+## 12. Architecture principles
 
 1. Code and migrations outrank this document.
-2. Keep one deployable application while the domain and team remain cohesive.
-3. Enforce authorization and invariants at the database boundary, not only in UI or routes.
+2. Keep one deployable while the domain and team remain cohesive.
+3. Enforce authorization and invariants at the database boundary.
 4. Keep authoritative writes atomic; make asynchronous work durable and idempotent.
-5. Return bounded, intentional projections instead of raw database rows.
-6. Optimize measured database and cache behavior before changing topology.
-7. Add infrastructure for an approved feature, not for a hypothetical future.
+5. Return bounded, intentional API projections.
+6. Optimize measured database/cache behavior before changing topology.
+7. Add infrastructure for an approved feature, not a hypothetical future.
 8. Treat privacy, abuse handling, observability, and operational ownership as feature requirements.
 
-## 12. Verification baseline
+## 13. Verification baseline
 
-At the time of this assessment:
+Verified locally on 2026-07-16 before this cleanup:
 
 ```text
-npm test          43 files, 228 tests passed
-npm run typecheck passed
-npm run lint      passed
-npm run test:rls  1 file, 16 tests defined; not rerun on 2026-07-16 because local Docker was unavailable
-npm run test:integration 3 live transactional tests defined; requires migrated local/disposable Supabase
-npm run test:e2e  1 environment-backed critical-path test defined; dedicated GitHub workflow provisions fixtures and Chromium
-npm run build     passed
+npm run lint       passed
+npm run typecheck  passed
+npm test           44 files, 231 tests passed
 ```
 
-These checks validate the current TypeScript, unit-test, and build baseline. The 2026-07-14 primary hosted-project verification predates the new transactional migration. CI or a migrated disposable Supabase environment must run the expanded live suite before deployment. External Sentry alert configuration and provider behavior still require production verification.
+The production build and the same static/unit checks must be rerun after this change. Live RLS, transactional, and browser suites require local/disposable Supabase and fixture infrastructure; their presence is not evidence that a target hosted environment has passed them.
