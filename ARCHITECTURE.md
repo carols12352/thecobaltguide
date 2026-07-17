@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture
 
-> Last reviewed: 2026-07-16 against `main` at `836667b` before this documentation/code-organization change.
+> Last reviewed: 2026-07-17 against `main` at `0b11f58` after the Stage C repository cleanup and production-readiness audit.
 >
 > Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, known gaps, and the next planned milestone.
 
@@ -12,7 +12,7 @@ The application is a **modular monolith**:
 - Services own business rules, orchestration, aggregation, and cache coordination.
 - Repositories own Supabase queries and transactional PostgreSQL RPC calls.
 - Supabase provides Auth, PostgreSQL, PostGIS, and Row Level Security (RLS).
-- Upstash Redis is optional for distributed cache and rate limiting.
+- Upstash Redis is configured in the deployed environment for distributed cache and rate limiting; local development still supports the documented in-memory/direct-database fallback.
 - Mapbox and Nominatim provide synchronous geocoding behind one provider boundary.
 
 One deployable application is the right topology for the current product, team, and transaction model. There is no measured need for microservices, Kubernetes, a read replica, a dedicated search service, or vector tiles.
@@ -28,7 +28,8 @@ One deployable application is the right topology for the current product, team, 
 | Live database coverage | 16 RLS/grant tests and 3 transactional integration tests defined |
 | Browser coverage | One environment-backed Playwright critical path |
 | CI | Lint, typecheck, unit tests, build, live database suites, E2E, and on-demand performance baseline workflows |
-| Monitoring | Sentry server integration plus structured operational logs; deployment alert configuration remains external |
+| Cache/limits | Upstash Redis deployment credentials are configured; runtime hit-rate, invalidation, and fallback evidence remains a release check |
+| Monitoring | Sentry deployment credentials and server integration are configured; browser instrumentation, source-map verification, and owned alerts remain open |
 
 These numbers are a point-in-time orientation aid, not architecture targets.
 
@@ -47,7 +48,7 @@ Next.js modular monolith
   ├─ Repositories: Supabase reads/writes and Postgres RPCs
   └─ Geocoding provider client: Mapbox/Nominatim transport policy
           │
-          ├──────────────► Upstash Redis (optional)
+          ├──────────────► Upstash Redis (configured in deployment)
           │                 cache and distributed limits
           ▼
 Supabase
@@ -159,6 +160,8 @@ Global cache versions allow mutations to bypass stale map/search data without sc
 
 Public map responses expose `Server-Timing` for Redis and database diagnosis. Repeatable sampling is documented in `docs/performance-baseline.md`.
 
+Deployment configuration alone is not cache acceptance evidence. Release verification must demonstrate read hits, version-bump invalidation after report and moderation mutations, distributed rate limits, and graceful fallback when Redis is unavailable. Both the write token and read-only token are required for the intended production behavior.
+
 ## 8. External systems and deployment
 
 ### Geocoding
@@ -171,7 +174,18 @@ Public map responses expose `Server-Timing` for Redis and database diagnosis. Re
 
 ### Monitoring
 
-The Sentry Next.js server SDK and request-error instrumentation are implemented. Structured JSON logs continue without a DSN. Production readiness still requires deployment credentials, source-map configuration, and owned error-rate/p95 alert thresholds.
+The Sentry deployment credentials, Next.js server SDK, and request-error instrumentation are configured. Structured JSON logs continue as a fallback. The current repository does not yet initialize the browser SDK through `instrumentation-client.ts`, so client exceptions, navigation spans, and browser Web Vitals are not part of the verified monitoring surface.
+
+Production acceptance still requires a test event from the deployed release, readable TypeScript source maps, release-to-commit correlation, and owned error-rate/p95 alert thresholds. Session Replay is not required; if introduced later, sensitive account, address, and report fields must be masked by default.
+
+### Known production-readiness gaps
+
+- The unauthenticated account-hints route exposes account existence and authentication-provider details; rate limiting reduces volume but does not remove the account-enumeration risk.
+- Application security headers and a provider-compatible Content Security Policy are not configured yet.
+- The root header reads the authenticated session for every route, making otherwise public/static pages dynamically rendered and adding Supabase work to anonymous requests.
+- Place pages lack dynamic metadata, and the application has no sitemap, robots policy, social preview image, or explicit `noindex` policy for private routes.
+- The shared dialog handles Escape and initial focus but does not yet trap focus or restore it to the trigger.
+- The dependency audit reports two moderate advisories through Next.js' nested PostCSS version. A force fix would introduce an invalid major downgrade; upgrade only through a verified Next.js release containing the corrected dependency.
 
 ### Deployment topology
 
@@ -214,18 +228,38 @@ These labels describe completed history only. New work must use a new milestone 
 
 ## 10. Next-step plan: Stage C
 
-Stage C is intentionally ordered. Finish operational evidence and remaining high-value boundaries before broadening product scope.
+Stage C is intentionally ordered. Redis and Sentry configuration is recorded as current infrastructure state, not as a rewrite of the completed Stage A or Stage B history. Finish operational evidence, security boundaries, and measured runtime work before broadening product scope.
 
 ### C1 — close release evidence
 
 1. Apply every migration through `20260715150000` to a disposable environment and the intended hosted environment.
 2. Run `test:rls`, `test:integration`, and the Playwright critical path against disposable fixtures.
-3. Configure Sentry source maps and owned error-rate/p95 alerts.
-4. Perform post-deploy smoke checks for auth, map grid/viewport, geocoding quotas/fallback, report submission, moderation, and cache invalidation.
+3. Verify Redis hits through `Server-Timing`, mutation-driven version invalidation, distributed rate limits, and direct-database/in-memory fallback behavior.
+4. Send a deployed Sentry test event, verify TypeScript source maps and release correlation, and configure owned error-rate/p95 alerts.
+5. Perform post-deploy smoke checks for auth, map grid/viewport, geocoding quotas/fallback, report submission, moderation, and cache invalidation.
 
-Exit criteria: migration history is recorded, all live suites pass, alert ownership exists, and smoke evidence is linked from the release record.
+Exit criteria: migration history is recorded, all live suites pass, Redis behavior is evidenced, Sentry events are actionable, alert ownership exists, and smoke evidence is linked from the release record.
 
-### C2 — reduce measured code hotspots
+### C2 — close security and privacy gaps
+
+1. Remove unauthenticated account-existence/provider disclosure or place it behind a proof-of-human/verified flow with generic public responses.
+2. Add CSP, `nosniff`, referrer, permissions, frame-ancestor, and production transport headers; begin with report-only CSP while validating Supabase, map tiles, Mapbox, Google OAuth, and Sentry origins.
+3. Bound and periodically prune the in-memory rate-limit fallback, and return standards-based rate-limit metadata such as `Retry-After`.
+4. Add self-service account data export/deletion semantics, including documented anonymization or retention for moderation/audit records.
+
+Exit criteria: unauthenticated responses do not disclose account state, security headers pass deployment checks, fallback limits cannot grow without bound, and privacy operations have explicit data-retention rules and tests.
+
+### C3 — improve rendering, browser observability, and discovery
+
+1. Add `instrumentation-client.ts` for browser errors, navigation spans, and sampled Web Vitals without collecting default PII.
+2. Isolate personalized header state so public pages can return to static/cached rendering without losing session refresh behavior.
+3. Move initial account/admin authorization and first-load data to server boundaries while retaining API authorization on every protected operation.
+4. Add route error/not-found UI, sitemap, robots policy, social preview metadata, private-route `noindex`, and dynamic place metadata.
+5. Complete keyboard, focus-trap/restore, mobile viewport, reduced-motion, and Lighthouse verification in a real browser.
+
+Exit criteria: public pages avoid unnecessary per-request profile reads, client failures are observable, private routes are not indexed, place links have useful previews, and the critical UI paths pass browser accessibility checks.
+
+### C4 — reduce measured code hotspots
 
 1. Continue splitting `components/admin/admin-dashboard.tsx` by tab as each tab is changed; API models and reusable presentation pieces are already separated.
 2. Split the 700+ line `place-repository.ts` read facade into public-map, public-detail/search, and admin query owners without duplicating query logic.
@@ -234,9 +268,11 @@ Exit criteria: migration history is recorded, all live suites pass, alert owners
 
 Exit criteria: dependencies remain route → service → repository, moved behavior has tests, and no compatibility layer is removed without verified callers.
 
-### C3 — select one bounded product feature
+### C5 — expose existing non-point merchant data
 
-Choose one feature only after C1. Prefer a bounded public read/filter or focused moderation improvement. For the selected feature, document:
+The preferred first bounded product feature is a public read surface for the existing `merchant_multiplier_coverages` and `online_merchant_multipliers` tables. The UI must distinguish physical places, city/province/nationwide coverage, and online-only merchants without inventing map coordinates.
+
+Implement this feature only after C1 is closed and the relevant C2/C3 safeguards are in place. Before implementation, document:
 
 - owner and authorization rules;
 - data/migration and rollback behavior;
@@ -246,7 +282,9 @@ Choose one feature only after C1. Prefer a bounded public read/filter or focused
 - unit, integration, and E2E coverage;
 - observable failures and ongoing provider/moderation cost.
 
-Do not pre-build generic queues, microservices, search clusters, or multi-card UI without a selected use case.
+Acceptance criteria: bounded indexed queries, cache keys and invalidation rules, explicit source attribution, search/filter integration, responsive and accessible presentation, and unit/API/E2E coverage for each merchant scope.
+
+After this feature is measured, candidates such as shareable map-filter URLs, device-location sorting, saved merchants, or change notifications may be selected independently. Do not pre-build generic queues, microservices, search clusters, notification workers, or multi-card UI without an approved use case.
 
 ## 11. Extraction and scaling triggers
 
@@ -274,12 +312,15 @@ The first likely extraction, if a selected feature needs it, is an asynchronous 
 
 ## 13. Verification baseline
 
-Verified locally on 2026-07-16 before this cleanup:
+Verified locally on 2026-07-17 during the production-readiness audit:
 
 ```text
 npm run lint       passed
 npm run typecheck  passed
 npm test           44 files, 231 tests passed
+npm run build      passed (all application pages currently dynamic)
 ```
 
-The production build and the same static/unit checks must be rerun after this change. Live RLS, transactional, and browser suites require local/disposable Supabase and fixture infrastructure; their presence is not evidence that a target hosted environment has passed them.
+The live RLS and transactional suites were not executed because no local/disposable Supabase instance was available. The browser suite was not executed because the local Playwright Chromium binary was unavailable. These are environment evidence gaps rather than passing or failing product assertions; CI or a disposable release environment must produce the authoritative results.
+
+`npm audit --omit=dev` reported two moderate advisories in Next.js' nested PostCSS dependency. No force fix was applied because the proposed resolution would downgrade Next.js across incompatible major versions.
