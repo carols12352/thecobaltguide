@@ -81,8 +81,19 @@ export function jsonValidationError(details: unknown) {
 }
 
 export function jsonRateLimited(resetAt: number) {
+  const retryAfterSeconds = Math.max(
+    1,
+    Math.ceil((resetAt - Date.now()) / 1000),
+  );
   return NextResponse.json(
     { error: "Rate limit exceeded", code: "RATE_LIMITED", resetAt },
-    { status: 429 },
+    {
+      status: 429,
+      headers: {
+        "Cache-Control": "private, no-store, max-age=0",
+        "Retry-After": String(retryAfterSeconds),
+        "RateLimit-Reset": String(Math.ceil(resetAt / 1000)),
+      },
+    },
   );
 }
