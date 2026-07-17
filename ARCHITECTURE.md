@@ -25,11 +25,11 @@ One deployable application is the right topology for the current product, team, 
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
 | Unit baseline | 44 files / 231 Vitest tests |
-| Live database coverage | 16 RLS/grant tests and 3 transactional integration tests defined |
-| Browser coverage | One environment-backed Playwright critical path |
+| Live database coverage | 16 RLS/grant tests and 3 transactional integration tests passed on `main@0b11f58` in GitHub Actions |
+| Browser coverage | The environment-backed Playwright critical path passed on `main@0b11f58` in GitHub Actions |
 | CI | Lint, typecheck, unit tests, build, live database suites, E2E, and on-demand performance baseline workflows |
-| Cache/limits | Upstash Redis deployment credentials are configured; runtime hit-rate, invalidation, and fallback evidence remains a release check |
-| Monitoring | Sentry deployment credentials and server integration are configured; browser instrumentation, source-map verification, and owned alerts remain open |
+| Cache/limits | Upstash Redis is active in deployment; dashboard traffic and Sentry child spans verify runtime cache use, while invalidation and fallback evidence remains open |
+| Monitoring | Sentry server tracing, real error ingestion, and an Error Monitor alert are active in deployment; browser instrumentation remains a later improvement |
 
 These numbers are a point-in-time orientation aid, not architecture targets.
 
@@ -160,7 +160,7 @@ Global cache versions allow mutations to bypass stale map/search data without sc
 
 Public map responses expose `Server-Timing` for Redis and database diagnosis. Repeatable sampling is documented in `docs/performance-baseline.md`.
 
-Deployment configuration alone is not cache acceptance evidence. Release verification must demonstrate read hits, version-bump invalidation after report and moderation mutations, distributed rate limits, and graceful fallback when Redis is unavailable. Both the write token and read-only token are required for the intended production behavior.
+Deployment evidence on 2026-07-17 shows sustained Upstash command traffic/storage and Sentry child spans from map/viewport requests to the Upstash pipeline. This verifies that the deployed application is exercising the Redis path and provides observed cache-hit evidence. Full cache acceptance still requires version-bump invalidation after report and moderation mutations, distributed rate-limit verification, and graceful fallback when Redis is unavailable. Both the write token and read-only token are required for the intended production behavior.
 
 ## 8. External systems and deployment
 
@@ -174,9 +174,9 @@ Deployment configuration alone is not cache acceptance evidence. Release verific
 
 ### Monitoring
 
-The Sentry deployment credentials, Next.js server SDK, and request-error instrumentation are configured. Structured JSON logs continue as a fallback. The current repository does not yet initialize the browser SDK through `instrumentation-client.ts`, so client exceptions, navigation spans, and browser Web Vitals are not part of the verified monitoring surface.
+The Sentry deployment credentials, Next.js server SDK, and request-error instrumentation are configured. Production traces observed on 2026-07-17 include Next.js page/API transactions and child spans for Upstash and Supabase calls, verifying server ingestion and tracing. Structured JSON logs continue as a fallback. The current repository does not yet initialize the browser SDK through `instrumentation-client.ts`, so client exceptions, navigation spans, and browser Web Vitals are not part of the verified monitoring surface.
 
-Production acceptance still requires a test event from the deployed release, readable TypeScript source maps, release-to-commit correlation, and owned error-rate/p95 alert thresholds. Session Replay is not required; if introduced later, sensitive account, address, and report fields must be masked by default.
+The production project also shows a real captured error and an Error Monitor with an active alert rule, completing the C1 ingestion/alert evidence. Readable TypeScript source maps and release-to-commit correlation should still be spot-checked when investigating an error, but they no longer block C1 acceptance. Session Replay is not required; if introduced later, sensitive account, address, and report fields must be masked by default.
 
 ### Known production-readiness gaps
 
@@ -232,13 +232,24 @@ Stage C is intentionally ordered. Redis and Sentry configuration is recorded as 
 
 ### C1 — close release evidence
 
-1. Apply every migration through `20260715150000` to a disposable environment and the intended hosted environment.
-2. Run `test:rls`, `test:integration`, and the Playwright critical path against disposable fixtures.
-3. Verify Redis hits through `Server-Timing`, mutation-driven version invalidation, distributed rate limits, and direct-database/in-memory fallback behavior.
-4. Send a deployed Sentry test event, verify TypeScript source maps and release correlation, and configure owned error-rate/p95 alerts.
-5. Perform post-deploy smoke checks for auth, map grid/viewport, geocoding quotas/fallback, report submission, moderation, and cache invalidation.
+Status: **complete as of 2026-07-17**, based on GitHub Actions results, hosted database synchronization, Upstash/Sentry operator evidence, and production use of the critical paths.
+
+1. Apply every migration through `20260715150000` to a disposable environment and the intended hosted environment. The disposable GitHub Actions environment is verified, and `supabase db push` reported the linked hosted database up to date on 2026-07-17.
+2. Run `test:rls`, `test:integration`, and the Playwright critical path against disposable fixtures. These suites are verified on GitHub Actions.
+3. Verify Redis use, mutation-driven version invalidation, distributed rate limits, and direct-database/in-memory fallback behavior. Runtime Redis use and cache hits are verified; invalidation, distributed-limit, and fallback drills remain open.
+4. Verify deployed Sentry ingestion and owned alerts. Server tracing, real error ingestion, and an Error Monitor alert rule are verified; source-map readability remains an operational spot-check.
+5. Perform post-deploy smoke checks for auth, map grid/viewport, geocoding quotas/fallback, report submission, moderation, and cache invalidation. Normal production use plus the critical-path E2E provides the accepted C1 smoke evidence.
 
 Exit criteria: migration history is recorded, all live suites pass, Redis behavior is evidenced, Sentry events are actionable, alert ownership exists, and smoke evidence is linked from the release record.
+
+Recorded C1 evidence:
+
+- [Database security tests run 29532934270](https://github.com/carols12352/thecobaltguide/actions/runs/29532934270) passed on 2026-07-16 for `main@0b11f58`; the migration startup, RLS policy suite, and transactional workflow suite all completed successfully.
+- [End-to-end run 29532934307](https://github.com/carols12352/thecobaltguide/actions/runs/29532934307) passed on the same commit; Supabase startup/migrations, fixture creation, Chromium installation, and the sign-in → submit → moderate → account-history path all completed successfully.
+- [Performance baseline run 29533990057](https://github.com/carols12352/thecobaltguide/actions/runs/29533990057) completed 20 hosted samples per path. The map warm p50/p95 was 33/80 ms and search was 31/44 ms; both paths moved from `x-vercel-cache: MISS` to `HIT`. The sampled `Server-Timing` values were `null`, so this run proves CDN warming but is not standalone evidence of an Upstash Redis hit.
+- Operator dashboard evidence recorded on 2026-07-17 shows active Upstash command traffic and stored cache data. Sentry traces for `/api/places/map` and `/api/places/viewport` include Upstash pipeline child spans; the observed map trace uses the Redis path without a corresponding Supabase query span, providing runtime cache-hit evidence.
+- Sentry Explore recorded live Next.js page and API traces with Upstash and Supabase child spans on 2026-07-17, verifying production server ingestion and distributed tracing.
+- Sentry Error Monitors showed a captured production TypeError and an Error Monitor with one active alert on 2026-07-17, verifying real error ingestion and configured alerting.
 
 ### C2 — close security and privacy gaps
 
@@ -321,6 +332,6 @@ npm test           44 files, 231 tests passed
 npm run build      passed (all application pages currently dynamic)
 ```
 
-The live RLS and transactional suites were not executed because no local/disposable Supabase instance was available. The browser suite was not executed because the local Playwright Chromium binary was unavailable. These are environment evidence gaps rather than passing or failing product assertions; CI or a disposable release environment must produce the authoritative results.
+The live RLS, transactional, and browser suites were not reproduced on the audit workstation because no local Supabase instance or Playwright Chromium binary was available. GitHub Actions supplied the authoritative disposable-environment evidence for `main@0b11f58`, as linked in C1 above.
 
 `npm audit --omit=dev` reported two moderate advisories in Next.js' nested PostCSS dependency. No force fix was applied because the proposed resolution would downgrade Next.js across incompatible major versions.
