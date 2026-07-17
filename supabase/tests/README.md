@@ -1,7 +1,7 @@
 # Database integration and RLS tests
 
 These tests verify Row Level Security, table grants, and function ACLs after the
-Stage A corrective migration chain (`20260714120000`–`20260715120000`).
+Stage A corrective migration chain and subsequent Stage C privacy migrations.
 
 They require a running local Supabase with migrations applied. They are separate
 from the default `npm test` suite and run in the dedicated Database security
@@ -56,9 +56,10 @@ explicitly disposable staging project.
 
 The 16-test suite also verifies inactive-row filtering, bounded public map RPC
 behavior, catalogue/summary write denial, service-only auth lookup isolation,
-and denial of direct access to transactional write RPCs.
+and denial of direct access to transactional write/account-deletion RPCs.
 
-The 3-test transactional suite verifies that report submission changes the
+The 4-test transactional suite verifies that report submission changes the
 report, profile counter/reputation, and summary together; that a repeated daily
 submission produces PostgreSQL conflict `23505` without another row; and that
-deletion reverses the contribution atomically.
+deletion reverses the contribution atomically, and account deletion removes
+identity/free-form content while retaining anonymous structured evidence.

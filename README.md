@@ -11,7 +11,7 @@ Users can browse and filter merchants, submit locations and multiplier reports, 
 - Runtime: Next.js 16 App Router, React 19, and Node.js 22+.
 - Data: Supabase PostgreSQL/PostGIS with Row Level Security.
 - Optional infrastructure: Upstash Redis and Sentry.
-- Quality baseline: 44 Vitest files / 231 tests, plus live Supabase and Playwright suites.
+- Quality baseline: 49 Vitest files / 240 tests, plus live Supabase and Playwright suites.
 - Architecture: modular monolith using route → service → repository boundaries.
 - Current milestone: Stage A and Stage B are preserved legacy milestones; new work starts at Stage C.
 
@@ -30,8 +30,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries, operational readin
 
 ### Accounts and moderation
 
-- Email/password, magic-link, and Google sign-in through Supabase Auth.
+- Email/password, magic-link, and Google sign-in through Supabase Auth; the login page remembers only the last method used on that device.
 - Thirty-day report and flag history with active/archive views.
+- Self-service JSON data export and permanent account deletion with anonymous retention of structured community contributions.
 - Role-based moderator and administrator access.
 - Atomic report submission/deletion, moderation, grouped flag resolution, and place merging.
 - Reputation updates, suspended-account enforcement, and write rate limits.
@@ -157,7 +158,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run test:watch` | Run Vitest in watch mode |
 | `npm run test:rls` | Run the live Supabase RLS/grant suite |
 | `npm run test:integration` | Run transactional workflow tests against local/disposable Supabase |
-| `npm run test:e2e` | Run the fixture-backed Playwright critical path |
+| `npm run test:e2e` | Check deployed security headers and run the fixture-backed Playwright critical path |
 | `npm run baseline:api` | Record API latency, cache headers, and `Server-Timing` |
 | `npm run replace:rewards-canada` | Validate and preview the reviewed seed replacement |
 | `npm run replace:rewards-canada -- --apply --replace` | Atomically replace the reviewed seed |
@@ -203,7 +204,7 @@ The repository targets Vercel or another Node.js 22+ host.
 - `release` is excluded from that workflow and remains separately managed.
 - Production needs migrated Supabase schema, production Auth URLs/email delivery, Redis write/read credentials, and Sentry alert configuration.
 
-Before production deployment, apply every migration through `20260715150000`, run the live database suites in a disposable environment, and verify the map/geocoding critical path. The primary hosted verification recorded on 2026-07-14 predates the transactional migration and is not sufficient evidence for a new environment.
+Before production deployment, apply every migration through `20260717130000`, run the live database suites in a disposable environment, and verify the map/geocoding critical path. The primary hosted verification recorded on 2026-07-14 predates the transactional and privacy migrations and is not sufficient evidence for a new environment.
 
 ## Data and operational notes
 
@@ -212,6 +213,13 @@ Before production deployment, apply every migration through `20260715150000`, ru
 - Without Redis, reads fall back to Supabase and rate limits are process-local.
 - The reviewed Rewards Canada seed is installed only through the explicit replacement script. See [supabase/scripts/README.md](supabase/scripts/README.md).
 - Repeatable performance measurements are documented in [docs/performance-baseline.md](docs/performance-baseline.md).
+
+## Stage C privacy and security
+
+- Anonymous email/provider lookup has been removed. Sign-in guidance uses only a browser-local `lastUsed` method marker; no email address or account-existence state is sent to the application.
+- A report-only Content Security Policy and `nosniff`, referrer, frame, permissions, and production transport headers are configured in `next.config.ts`. Review CSP reports against deployed Supabase, map, OAuth, and Sentry traffic before enforcing it.
+- The in-memory rate-limit fallback prunes expired keys and caps itself at 10,000 entries. HTTP 429 responses include `Retry-After` and `RateLimit-Reset`.
+- Account exports are private, no-store JSON downloads. Account deletion requires the literal confirmation `DELETE`; it removes Auth/profile data and free-form contribution text, while retaining anonymized structured contribution and audit records to preserve map results.
 
 ## Legacy milestones and next work
 

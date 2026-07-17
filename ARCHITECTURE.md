@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture
 
-> Last reviewed: 2026-07-17 against `main` at `0b11f58` after the Stage C repository cleanup and production-readiness audit.
+> Last reviewed: 2026-07-17 on the Stage C branch after the privacy/security implementation.
 >
 > Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, known gaps, and the next planned milestone.
 
@@ -24,7 +24,7 @@ One deployable application is the right topology for the current product, team, 
 | TypeScript/TSX | About 18.2k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Unit baseline | 44 files / 231 Vitest tests |
+| Unit baseline | 49 files / 240 Vitest tests |
 | Live database coverage | 16 RLS/grant tests and 3 transactional integration tests passed on `main@0b11f58` in GitHub Actions |
 | Browser coverage | The environment-backed Playwright critical path passed on `main@0b11f58` in GitHub Actions |
 | CI | Lint, typecheck, unit tests, build, live database suites, E2E, and on-demand performance baseline workflows |
@@ -180,8 +180,7 @@ The production project also shows a real captured error and an Error Monitor wit
 
 ### Known production-readiness gaps
 
-- The unauthenticated account-hints route exposes account existence and authentication-provider details; rate limiting reduces volume but does not remove the account-enumeration risk.
-- Application security headers and a provider-compatible Content Security Policy are not configured yet.
+- A report-only provider-compatible Content Security Policy, `nosniff`, strict referrer, frame, permissions, and production transport headers are configured. Enforce the CSP only after production report review confirms every Supabase, map, OAuth, and Sentry origin.
 - The root header reads the authenticated session for every route, making otherwise public/static pages dynamically rendered and adding Supabase work to anonymous requests.
 - Place pages lack dynamic metadata, and the application has no sitemap, robots policy, social preview image, or explicit `noindex` policy for private routes.
 - The shared dialog handles Escape and initial focus but does not yet trap focus or restore it to the trigger.
@@ -253,12 +252,14 @@ Recorded C1 evidence:
 
 ### C2 — close security and privacy gaps
 
-1. Remove unauthenticated account-existence/provider disclosure or place it behind a proof-of-human/verified flow with generic public responses.
-2. Add CSP, `nosniff`, referrer, permissions, frame-ancestor, and production transport headers; begin with report-only CSP while validating Supabase, map tiles, Mapbox, Google OAuth, and Sentry origins.
-3. Bound and periodically prune the in-memory rate-limit fallback, and return standards-based rate-limit metadata such as `Retry-After`.
-4. Add self-service account data export/deletion semantics, including documented anonymization or retention for moderation/audit records.
+Status: **complete in code; live database/browser verification remains required before release.**
 
-Exit criteria: unauthenticated responses do not disclose account state, security headers pass deployment checks, fallback limits cannot grow without bound, and privacy operations have explicit data-retention rules and tests.
+1. Anonymous account-existence/provider disclosure is removed. The sign-in form uses a device-local `lastUsed` marker that stores only `google`, `password`, or `magic_link`.
+2. `next.config.ts` applies report-only CSP plus `nosniff`, referrer, permissions, frame, and production HSTS headers. The CSP permits configured Supabase, map, Mapbox, Nominatim, Google OAuth, and Sentry transport; deploy it in report-only mode before enforcement.
+3. The in-memory fallback opportunistically prunes expired entries and retains at most 10,000 keys. 429 responses are private/no-store and include `Retry-After` plus `RateLimit-Reset`.
+4. `GET /api/me/data` exports private no-store JSON. `DELETE /api/me/data` requires the literal `DELETE`, then deletes Auth/profile data and free-form user text in one database transaction. Reports and flags retain their structured evidence with `user_id` set to null; moderation logs retain audit context with `moderator_id` set to null. This retention rule preserves community summaries without retaining the deleted account identity.
+
+Exit criteria: **met in code.** The test suite covers local last-used state, header generation and actual Next response headers, bounded fallback behavior, retry metadata, destructive confirmation, and service-only database RPC access. Before release, run the migrated live database suites and browser flow against disposable fixtures.
 
 ### C3 — improve rendering, browser observability, and discovery
 
@@ -328,7 +329,7 @@ Verified locally on 2026-07-17 during the production-readiness audit:
 ```text
 npm run lint       passed
 npm run typecheck  passed
-npm test           44 files, 231 tests passed
+npm test           49 files, 240 tests passed
 npm run build      passed (all application pages currently dynamic)
 ```
 
