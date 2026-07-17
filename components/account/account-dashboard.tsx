@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { SecuritySettings } from "@/components/account/security-settings";
+import { DangerZone, PrivacySettings } from "@/components/account/privacy-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -234,6 +235,10 @@ export function AccountDashboard({
       </section>
 
       <section className="mt-8">
+        <PrivacySettings />
+      </section>
+
+      <section className="mt-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold">My reports</h2>
@@ -432,6 +437,8 @@ export function AccountDashboard({
           </div>
         )}
       </section>
+
+      <DangerZone />
     </div>
   );
 }

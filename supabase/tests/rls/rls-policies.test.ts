@@ -361,10 +361,10 @@ describe("RLS lockdown matrix", () => {
       expect(reports.data ?? []).toEqual([]);
     });
 
-    it("cannot execute the service-only auth account lookup", async () => {
+    it("cannot execute service-only account deletion", async () => {
       const anon = anonClient();
-      const result = await anon.rpc("lookup_auth_account_hints", {
-        target_email: emails.a,
+      const result = await anon.rpc("delete_own_account_transactional", {
+        p_user_id: fixture.userAId,
       });
       expect(result.error).toBeTruthy();
       expect(result.data).toBeNull();
@@ -504,10 +504,10 @@ describe("RLS lockdown matrix", () => {
       expect(check.data?.reputation_score).not.toBe(9999);
     });
 
-    it("cannot execute the service-only auth account lookup", async () => {
+    it("cannot execute service-only account deletion", async () => {
       const userA = await userClient(emails.a);
-      const result = await userA.rpc("lookup_auth_account_hints", {
-        target_email: emails.b,
+      const result = await userA.rpc("delete_own_account_transactional", {
+        p_user_id: fixture.userAId,
       });
       expect(result.error).toBeTruthy();
       expect(result.data).toBeNull();
