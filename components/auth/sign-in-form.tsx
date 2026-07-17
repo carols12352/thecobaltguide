@@ -11,7 +11,12 @@ import { PasswordInput } from "@/components/auth/password-input";
 import { Label } from "@/components/ui/label";
 import { AUTH_EMAIL_COOLDOWN_SECONDS } from "@/config/constants";
 import { formatAuthError } from "@/lib/auth/errors";
-import { getSignInErrorMessage } from "@/lib/auth/account-hints-client";
+import {
+  formatLastUsedAuthMethod,
+  getLastUsedAuthMethod,
+  setLastUsedAuthMethod,
+  type LastUsedAuthMethod,
+} from "@/lib/auth/last-used-method";
 import {
   isEmailCooldownActive,
   startEmailCooldown,
@@ -35,7 +40,12 @@ function getRedirectPath(searchParams: URLSearchParams): string {
 export function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mode, setMode] = useState<SignInMode>("password");
+  const [mode, setMode] = useState<SignInMode>(() => {
+    const method = getLastUsedAuthMethod();
+    return method === "magic_link" ? "magic_link" : "password";
+  });
+  const [lastUsedMethod, setLastUsedMethodState] =
+    useState<LastUsedAuthMethod | null>(() => getLastUsedAuthMethod());
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(
@@ -51,6 +61,11 @@ export function SignInForm() {
   const cooldownSeconds = formatCooldownSeconds(cooldownRemainingMs);
   const cooldownActive = cooldownRemainingMs > 0;
 
+  function rememberMethod(method: LastUsedAuthMethod) {
+    setLastUsedAuthMethod(method);
+    setLastUsedMethodState(method);
+  }
+
   async function signInWithGoogle() {
     setError(null);
     const supabase = createClient();
@@ -61,7 +76,12 @@ export function SignInForm() {
       options: { redirectTo },
     });
 
-    if (oauthError) setError(formatAuthError(oauthError));
+    if (oauthError) {
+      setError(formatAuthError(oauthError));
+      return;
+    }
+
+    rememberMethod("google");
   }
 
   async function handlePasswordSubmit(e: React.FormEvent) {
@@ -78,14 +98,11 @@ export function SignInForm() {
     setLoading(false);
 
     if (signInError) {
-      const message = await getSignInErrorMessage(
-        email.trim(),
-        formatAuthError(signInError),
-      );
-      setError(message);
+      setError(formatAuthError(signInError));
       return;
     }
 
+    rememberMethod("password");
     router.push(getRedirectPath(searchParams));
     router.refresh();
   }
@@ -123,6 +140,7 @@ export function SignInForm() {
     }
 
     startEmailCooldown(trimmed);
+    rememberMethod("magic_link");
     setEmailDialogKind("magic_link");
     setEmailDialogOpen(true);
   }
@@ -189,6 +207,7 @@ export function SignInForm() {
         >
           <GoogleIcon />
           Continue with Google
+          {lastUsedMethod === "google" ? <LastUsedLabel /> : null}
         </Button>
 
         <AuthDivider />
@@ -209,7 +228,8 @@ export function SignInForm() {
                 setError(null);
               }}
             >
-              {option === "password" ? "Password" : "Magic link"}
+              <span>{option === "password" ? "Password" : "Magic link"}</span>
+              {lastUsedMethod === option ? <LastUsedDot /> : null}
             </button>
           ))}
         </div>
@@ -281,8 +301,9 @@ export function SignInForm() {
         )}
 
         <p className="mt-4 text-center text-xs text-zinc-500">
-          Google and email sign-in use the same email as one account when
-          addresses match.
+          {lastUsedMethod
+            ? `${formatLastUsedAuthMethod(lastUsedMethod)} was last used on this device.`
+            : "Your last sign-in method will be remembered only on this device."}
         </p>
       </AuthShell>
 
@@ -293,6 +314,23 @@ export function SignInForm() {
         kind={emailDialogKind}
       />
     </>
+  );
+}
+
+function LastUsedLabel() {
+  return (
+    <span className="ml-auto text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+      Last used
+    </span>
+  );
+}
+
+function LastUsedDot() {
+  return (
+    <span
+      className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-cobalt-500"
+      aria-label="Last used on this device"
+    />
   );
 }
 
