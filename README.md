@@ -11,9 +11,9 @@ Users can browse and filter merchants, submit locations and multiplier reports, 
 - Runtime: Next.js 16 App Router, React 19, and Node.js 22+.
 - Data: Supabase PostgreSQL/PostGIS with Row Level Security.
 - Optional infrastructure: Upstash Redis and Sentry.
-- Quality baseline: 49 Vitest files / 240 tests, plus live Supabase and Playwright suites.
+- Quality baseline: 51 Vitest files / 245 tests, plus live Supabase, Playwright, architecture, and Lighthouse suites.
 - Architecture: modular monolith using route → service → repository boundaries.
-- Current milestone: Stage A and Stage B are preserved legacy milestones; new work starts at Stage C.
+- Current milestone: Stage A and Stage B are preserved legacy milestones; Stage C1–C3 are implemented, with C4 next.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries, operational readiness, legacy milestones, and the next-step plan.
 
@@ -36,7 +36,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries, operational readin
 - Role-based moderator and administrator access.
 - Atomic report submission/deletion, moderation, grouped flag resolution, and place merging.
 - Reputation updates, suspended-account enforcement, and write rate limits.
-- Structured operational logs and optional Sentry server error/tracing integration.
+- Structured operational logs and optional privacy-filtered Sentry server/browser error and tracing integration.
 
 ## Architecture at a glance
 
@@ -158,7 +158,9 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run test:watch` | Run Vitest in watch mode |
 | `npm run test:rls` | Run the live Supabase RLS/grant suite |
 | `npm run test:integration` | Run transactional workflow tests against local/disposable Supabase |
-| `npm run test:e2e` | Check deployed security headers and run the fixture-backed Playwright critical path |
+| `npm run test:e2e` | Run public mobile/a11y/discovery/security checks and the fixture-backed critical path |
+| `npm run test:architecture` | Assert built public routes are prerendered and private routes remain dynamic |
+| `npm run test:lighthouse` | Check production-build performance, accessibility, best-practice, and SEO budgets |
 | `npm run baseline:api` | Record API latency, cache headers, and `Server-Timing` |
 | `npm run replace:rewards-canada` | Validate and preview the reviewed seed replacement |
 | `npm run replace:rewards-canada -- --apply --replace` | Atomically replace the reviewed seed |
@@ -170,9 +172,11 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run test:architecture
+npm run test:lighthouse
 ```
 
-The live RLS/integration suites require a migrated local or disposable Supabase environment. The E2E suite skips locally unless all documented `E2E_*` fixture variables are present. CI provisions isolated fixtures; see [supabase/tests/README.md](supabase/tests/README.md).
+The live RLS/integration suites require a migrated local or disposable Supabase environment. Public E2E cases run without fixtures; only the authenticated mutation workflow skips unless all documented `E2E_*` variables are present. Lighthouse requires a local Chrome/Chromium installation and a completed production build. CI provisions isolated fixtures; see [supabase/tests/README.md](supabase/tests/README.md).
 
 ## Project structure
 
@@ -191,6 +195,7 @@ supabase/templates/   hosted Supabase email templates
 __tests__/            Vitest tests
 e2e/                  Playwright critical-path tests
 docs/                 focused operational documentation
+scripts/              architecture, Lighthouse, baseline, and data-operation tooling
 ```
 
 Within large feature areas, keep API-facing models and reusable presentation components next to their owning component. Do not import server-only modules into client components.
@@ -214,12 +219,16 @@ Before production deployment, apply every migration through `20260717130000`, ru
 - The reviewed Rewards Canada seed is installed only through the explicit replacement script. See [supabase/scripts/README.md](supabase/scripts/README.md).
 - Repeatable performance measurements are documented in [docs/performance-baseline.md](docs/performance-baseline.md).
 
-## Stage C privacy and security
+## Stage C production readiness
 
 - Anonymous email/provider lookup has been removed. Sign-in guidance uses only a browser-local `lastUsed` method marker; no email address or account-existence state is sent to the application.
 - A report-only Content Security Policy and `nosniff`, referrer, frame, permissions, and production transport headers are configured in `next.config.ts`. Review CSP reports against deployed Supabase, map, OAuth, and Sentry traffic before enforcing it.
 - The in-memory rate-limit fallback prunes expired keys and caps itself at 10,000 entries. HTTP 429 responses include `Retry-After` and `RateLimit-Reset`.
 - Account exports are private, no-store JSON downloads. Account deletion requires the literal confirmation `DELETE`; it removes Auth/profile data and free-form contribution text, while retaining anonymized structured contribution and audit records to preserve map results.
+- Public pages use a static shared shell; Account and Admin perform authorization and initial reads on the server. `npm run test:architecture` protects this rendering boundary.
+- Production-only browser Sentry initialization disables default PII and strips cookies, authorization values, user data, query strings, and sensitive breadcrumb/span fields before sending events.
+- Robots/sitemap routes, a social preview image, private-route `noindex`, dynamic place metadata, safe error/404 UI, focus trapping/restoration, reduced-motion behavior, and narrow-viewport checks are included.
+- The home page is organized into three viewport-height sections: a full-height Hero with a server-rendered static map on desktop, the real interactive map, then product context and contribution actions. MapLibre loads automatically once at least 25% of the second section enters the viewport. The latest local Lighthouse run scored both Home and About 94/100/100/100 for performance/accessibility/best-practices/SEO.
 
 ## Legacy milestones and next work
 
@@ -230,7 +239,7 @@ Stage A and Stage B are retained as immutable project-history milestones:
 | Stage A | Release safety: RLS/grants, transactional writes, observability, geocoding protection | `0ffe352` |
 | Stage B | Maintainability: service/repository splits, stable mutation errors, integration/E2E coverage, performance baseline | `ac122ab` |
 
-Do not amend, squash, or relabel these legacy commits. The next planned work is Stage C: close the production-readiness gap, finish the remaining high-value module boundaries, then select one bounded product feature. The ordered plan and acceptance criteria live in [ARCHITECTURE.md](ARCHITECTURE.md#10-next-step-plan-stage-c).
+Do not amend, squash, or relabel these legacy commits. The next planned work is Stage C4: reduce measured code hotspots, then select one bounded product feature. The ordered plan and acceptance criteria live in [ARCHITECTURE.md](ARCHITECTURE.md#10-next-step-plan-stage-c).
 
 ## Data attribution
 

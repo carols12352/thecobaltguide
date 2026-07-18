@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture
 
-> Last reviewed: 2026-07-17 on the Stage C branch after the privacy/security implementation.
+> Last reviewed: 2026-07-18 on the Stage C branch after the C3 rendering/observability implementation.
 >
 > Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, known gaps, and the next planned milestone.
 
@@ -24,12 +24,12 @@ One deployable application is the right topology for the current product, team, 
 | TypeScript/TSX | About 18.2k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Unit baseline | 49 files / 240 Vitest tests |
+| Unit baseline | 51 files / 245 Vitest tests |
 | Live database coverage | 16 RLS/grant tests and 3 transactional integration tests passed on `main@0b11f58` in GitHub Actions |
-| Browser coverage | The environment-backed Playwright critical path passed on `main@0b11f58` in GitHub Actions |
-| CI | Lint, typecheck, unit tests, build, live database suites, E2E, and on-demand performance baseline workflows |
+| Browser coverage | Six fixture-free Playwright cases pass locally; the environment-backed critical path passed on `main@0b11f58` and now includes dialog focus verification when fixtures are present |
+| CI | Lint, typecheck, unit tests, build, live database suites, E2E, architecture assertions, Lighthouse budgets, and on-demand API performance baselines |
 | Cache/limits | Upstash Redis is active in deployment; dashboard traffic and Sentry child spans verify runtime cache use, while invalidation and fallback evidence remains open |
-| Monitoring | Sentry server tracing, real error ingestion, and an Error Monitor alert are active in deployment; browser instrumentation remains a later improvement |
+| Monitoring | Sentry server tracing/error ingestion is active in deployment; privacy-filtered browser instrumentation is implemented and awaits deployed ingestion verification |
 
 These numbers are a point-in-time orientation aid, not architecture targets.
 
@@ -174,16 +174,15 @@ Deployment evidence on 2026-07-17 shows sustained Upstash command traffic/storag
 
 ### Monitoring
 
-The Sentry deployment credentials, Next.js server SDK, and request-error instrumentation are configured. Production traces observed on 2026-07-17 include Next.js page/API transactions and child spans for Upstash and Supabase calls, verifying server ingestion and tracing. Structured JSON logs continue as a fallback. The current repository does not yet initialize the browser SDK through `instrumentation-client.ts`, so client exceptions, navigation spans, and browser Web Vitals are not part of the verified monitoring surface.
+The Sentry deployment credentials, Next.js server SDK, and request-error instrumentation are configured. Production traces observed on 2026-07-17 include Next.js page/API transactions and child spans for Upstash and Supabase calls, verifying server ingestion and tracing. Structured JSON logs continue as a fallback. `instrumentation-client.ts` now initializes the browser SDK only in production, disables default PII, samples navigation traces, and sanitizes user/request/cookie/auth/query and sensitive breadcrumb/span data. Deployed client-event ingestion still requires an operator spot-check.
 
 The production project also shows a real captured error and an Error Monitor with an active alert rule, completing the C1 ingestion/alert evidence. Readable TypeScript source maps and release-to-commit correlation should still be spot-checked when investigating an error, but they no longer block C1 acceptance. Session Replay is not required; if introduced later, sensitive account, address, and report fields must be masked by default.
 
 ### Known production-readiness gaps
 
 - A report-only provider-compatible Content Security Policy, `nosniff`, strict referrer, frame, permissions, and production transport headers are configured. Enforce the CSP only after production report review confirms every Supabase, map, OAuth, and Sentry origin.
-- The root header reads the authenticated session for every route, making otherwise public/static pages dynamically rendered and adding Supabase work to anonymous requests.
-- Place pages lack dynamic metadata, and the application has no sitemap, robots policy, social preview image, or explicit `noindex` policy for private routes.
-- The shared dialog handles Escape and initial focus but does not yet trap focus or restore it to the trigger.
+- Browser Sentry ingestion, readable client source maps, and navigation traces require a deployed operator spot-check.
+- The fixture-backed sign-in/mutation/focus E2E step must run in CI or a disposable environment; fixture-free browser checks do not prove authenticated Supabase behavior.
 - The dependency audit reports two moderate advisories through Next.js' nested PostCSS version. A force fix would introduce an invalid major downgrade; upgrade only through a verified Next.js release containing the corrected dependency.
 
 ### Deployment topology
@@ -263,13 +262,15 @@ Exit criteria: **met in code.** The test suite covers local last-used state, hea
 
 ### C3 — improve rendering, browser observability, and discovery
 
-1. Add `instrumentation-client.ts` for browser errors, navigation spans, and sampled Web Vitals without collecting default PII.
-2. Isolate personalized header state so public pages can return to static/cached rendering without losing session refresh behavior.
-3. Move initial account/admin authorization and first-load data to server boundaries while retaining API authorization on every protected operation.
-4. Add route error/not-found UI, sitemap, robots policy, social preview metadata, private-route `noindex`, and dynamic place metadata.
-5. Complete keyboard, focus-trap/restore, mobile viewport, reduced-motion, and Lighthouse verification in a real browser.
+Status: **complete in code as of 2026-07-18; deployed browser-Sentry ingestion and the updated fixture-backed E2E remain release checks.**
 
-Exit criteria: public pages avoid unnecessary per-request profile reads, client failures are observable, private routes are not indexed, place links have useful previews, and the critical UI paths pass browser accessibility checks.
+1. `instrumentation-client.ts` captures browser errors and navigation spans in production with sampled tracing, no default PII, and explicit event sanitization.
+2. The shared header no longer performs an auth/profile read. Anonymous proxy requests without a Supabase auth cookie also avoid session verification, and the production build prerenders eight intended public routes.
+3. Account/Admin authorization and first-load data now execute at server page boundaries; every protected API mutation retains its own authorization.
+4. Safe error/not-found UI, bounded sitemap, robots policy, generated social image, private-route `noindex`, and dynamic place metadata are implemented. Place metadata and page rendering share a request-cached read.
+5. Dialog focus trap/restore and scroll locking, keyboard-operable Admin tabs, mobile overflow, reduced motion, 404/discovery/security headers, and Lighthouse budgets are automated. The home page uses three viewport-height sections; its desktop Hero map is static server-rendered UI, while the second-section MapLibre preview loads automatically at 25% visibility.
+
+Exit criteria: **met in code.** The latest local production run scored both Home and About 94/100/100/100 for performance/accessibility/best-practices/SEO. Six fixture-free Playwright cases pass; the authenticated critical path is fixture-gated. Verify a sanitized client event and navigation trace in deployed Sentry before release sign-off.
 
 ### C4 — reduce measured code hotspots
 
@@ -324,15 +325,18 @@ The first likely extraction, if a selected feature needs it, is an asynchronous 
 
 ## 13. Verification baseline
 
-Verified locally on 2026-07-17 during the production-readiness audit:
+Verified locally on 2026-07-18 after C3 implementation:
 
 ```text
 npm run lint       passed
 npm run typecheck  passed
-npm test           49 files, 240 tests passed
-npm run build      passed (all application pages currently dynamic)
+npm test           51 files, 245 tests passed
+npm run build      passed (8 public routes prerendered; Account/Admin dynamic)
+npm run test:architecture  passed
+npm run test:e2e   6 passed, 1 fixture-backed test skipped
+npm run test:lighthouse    passed (Home and About 94/100/100/100)
 ```
 
-The live RLS, transactional, and browser suites were not reproduced on the audit workstation because no local Supabase instance or Playwright Chromium binary was available. GitHub Actions supplied the authoritative disposable-environment evidence for `main@0b11f58`, as linked in C1 above.
+The RLS and transactional suites could not run locally because Docker/Supabase was not active; both stopped before executing tests. GitHub Actions supplied the authoritative disposable-environment evidence for `main@0b11f58`, as linked in C1 above. The updated authenticated E2E focus step remains to be exercised with disposable fixtures.
 
 `npm audit --omit=dev` reported two moderate advisories in Next.js' nested PostCSS dependency. No force fix was applied because the proposed resolution would downgrade Next.js across incompatible major versions.
