@@ -14,7 +14,7 @@ export function Footer() {
           <p className="mt-3 max-w-md text-xs leading-5">
             Community-sourced reference data — card issuers may classify transactions differently.
           </p>
-          <p className="mt-5 text-xs text-zinc-500">© 2026 The Cobalt Guide. Independent community project.</p>
+          <p className="mt-5 text-xs text-zinc-400">© 2026 The Cobalt Guide. Independent community project.</p>
         </div>
         <nav aria-label="Product links">
           <p className="text-xs font-semibold tracking-wide text-zinc-200 uppercase">Product</p>
@@ -34,7 +34,7 @@ export function Footer() {
         </nav>
       </div>
       <div className="mx-auto mt-10 max-w-7xl border-t border-zinc-800 pt-6">
-        <p className="text-xs leading-5 text-zinc-500">
+        <p className="text-xs leading-5 text-zinc-400">
           {REWARDS_CANADA_ATTRIBUTION}{" "}
           <a href="https://www.rewardscanada.ca/cobaltmultipliers.html" className="rounded-sm underline decoration-zinc-700 underline-offset-4 transition-colors hover:text-zinc-300" target="_blank" rel="noopener noreferrer">View original list</a>
         </p>

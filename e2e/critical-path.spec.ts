@@ -70,6 +70,25 @@ test("sign in → submit → moderate → account history", async ({ browser }) 
     await user.page.getByRole("button", { name: "archive" }).first().click();
     await expect(user.page.getByText("Reviewed", { exact: true })).toBeVisible();
   });
+  await test.step("trap and restore focus in the account deletion dialog", async () => {
+    const trigger = user.page.getByRole("button", { name: "Delete account" });
+    await trigger.click();
+
+    const dialog = user.page.getByRole("dialog", {
+      name: "Permanently delete account?",
+    });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Confirmation")).toBeFocused();
+
+    await user.page.keyboard.press("Shift+Tab");
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await user.page.keyboard.press("Tab");
+    await expect(dialog.getByLabel("Confirmation")).toBeFocused();
+
+    await user.page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
   await user.context.close();
   await moderator.context.close();
 });
