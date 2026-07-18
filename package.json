@@ -1,6 +1,6 @@
 {
   "name": "thecobaltguide",
-  "version": "1.5.13",
+  "version": "1.5.14",
   "private": true,
   "engines": {
     "node": ">=22"
@@ -16,6 +16,8 @@
     "test:rls": "vitest run --config vitest.rls.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
+    "test:architecture": "node scripts/assert-prerendered-routes.mjs",
+    "test:lighthouse": "node scripts/run-lighthouse.mjs",
     "baseline:api": "node scripts/measure-api-baseline.mjs",
     "replace:rewards-canada": "tsx supabase/scripts/replace-rewards-canada-seed.ts"
   },
@@ -38,8 +40,10 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "chrome-launcher": "^1.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "lighthouse": "^13.4.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.0",
     "typescript": "^5",
