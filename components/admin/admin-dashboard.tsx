@@ -12,6 +12,7 @@ import {
 import {
   ADMIN_TABS,
   PAYMENT_CONTEXT_LABELS,
+  adminTabIndexForKey,
   formatAdminDate,
   placeStatusVariant,
   reportStatusVariant,
@@ -54,11 +55,25 @@ function readAdminHintsDismissed() {
   }
 }
 
-export function AdminDashboard() {
+export interface AdminDashboardInitialData {
+  session: AdminSession;
+  reports: AdminReport[];
+  flagGroups: AdminFlagGroup[];
+  activePlaceCount: number;
+  users: AdminUser[];
+}
+
+export function AdminDashboard({
+  initial,
+}: {
+  initial: AdminDashboardInitialData;
+}) {
   const [tab, setTab] = useState<AdminTab>("overview");
-  const [session, setSession] = useState<AdminSession | null>(null);
-  const [reports, setReports] = useState<AdminReport[]>([]);
-  const [flagGroups, setFlagGroups] = useState<AdminFlagGroup[]>([]);
+  const [session, setSession] = useState<AdminSession | null>(initial.session);
+  const [reports, setReports] = useState<AdminReport[]>(initial.reports);
+  const [flagGroups, setFlagGroups] = useState<AdminFlagGroup[]>(
+    initial.flagGroups,
+  );
   const [places, setPlaces] = useState<AdminPlace[]>([]);
   const [placesTotal, setPlacesTotal] = useState(0);
   const [placePage, setPlacePage] = useState(1);
@@ -71,10 +86,12 @@ export function AdminDashboard() {
     useState<PlaceSearchCriteria | null>(null);
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [placesLoading, setPlacesLoading] = useState(false);
-  const [activePlaceCount, setActivePlaceCount] = useState(0);
-  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [activePlaceCount, setActivePlaceCount] = useState(
+    initial.activePlaceCount,
+  );
+  const [users, setUsers] = useState<AdminUser[]>(initial.users);
   const [placeFilter, setPlaceFilter] = useState<string>("all");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [mergeSourceId, setMergeSourceId] = useState("");
@@ -226,11 +243,6 @@ export function AdminDashboard() {
     setPlacePage(1);
     setPlaceSearchCriteria(parsed.criteria);
   }
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => void loadDashboard(), 0);
-    return () => window.clearTimeout(timeout);
-  }, [loadDashboard]);
 
   useEffect(() => {
     const timeout = window.setTimeout(
@@ -480,8 +492,28 @@ export function AdminDashboard() {
               key={item.id}
               type="button"
               role="tab"
+              id={`admin-tab-${item.id}`}
+              aria-controls={`admin-panel-${item.id}`}
               aria-selected={tab === item.id}
+              tabIndex={tab === item.id ? 0 : -1}
               onClick={() => setTab(item.id)}
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const tabs = Array.from(
+                  event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                    '[role="tab"]',
+                  ) ?? [],
+                );
+                const currentIndex = tabs.indexOf(event.currentTarget);
+                const nextIndex = adminTabIndexForKey(
+                  currentIndex,
+                  tabs.length,
+                  event.key as "ArrowLeft" | "ArrowRight" | "Home" | "End",
+                );
+                tabs[nextIndex]?.focus();
+                tabs[nextIndex]?.click();
+              }}
               className={cn(
                 "inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-200",
                 tab === item.id
@@ -499,7 +531,12 @@ export function AdminDashboard() {
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-4">
         {tab === "overview" ? (
-          <div className="space-y-5">
+          <div
+            id="admin-panel-overview"
+            role="tabpanel"
+            aria-labelledby="admin-tab-overview"
+            className="space-y-5"
+          >
             <section aria-labelledby="queue-summary-heading">
               <div className="mb-3 flex items-center justify-between">
                 <h2 id="queue-summary-heading" className="text-sm font-semibold">Queue summary</h2>
@@ -523,7 +560,12 @@ export function AdminDashboard() {
       ) : null}
 
       {tab === "reports" ? (
-        <section className="space-y-3">
+        <section
+          id="admin-panel-reports"
+          role="tabpanel"
+          aria-labelledby="admin-tab-reports"
+          className="space-y-3"
+        >
           {reports.map((report) => (
             <Card key={report.id} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
               <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
@@ -626,7 +668,12 @@ export function AdminDashboard() {
       ) : null}
 
       {tab === "flags" ? (
-        <section className="space-y-3">
+        <section
+          id="admin-panel-flags"
+          role="tabpanel"
+          aria-labelledby="admin-tab-flags"
+          className="space-y-3"
+        >
           {flagGroups.map((group) => (
             <Card key={group.placeId} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
               <CardHeader className="pb-2">
@@ -708,7 +755,12 @@ export function AdminDashboard() {
       ) : null}
 
       {tab === "places" ? (
-        <section className="space-y-6">
+        <section
+          id="admin-panel-places"
+          role="tabpanel"
+          aria-labelledby="admin-tab-places"
+          className="space-y-6"
+        >
           <form
             onSubmit={submitPlaceSearch}
             className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
@@ -931,7 +983,12 @@ export function AdminDashboard() {
       ) : null}
 
       {tab === "users" && isAdmin ? (
-        <section className="space-y-4">
+        <section
+          id="admin-panel-users"
+          role="tabpanel"
+          aria-labelledby="admin-tab-users"
+          className="space-y-4"
+        >
           <Card>
             <CardHeader>
               <h2 className="font-semibold">Look up by UUID</h2>

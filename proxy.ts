@@ -1,9 +1,14 @@
 import { createServerClient, type CookieMethodsServer } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/server-client";
+import { hasSupabaseAuthCookie } from "@/lib/auth/session-cookie";
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  if (!hasSupabaseAuthCookie(request.cookies.getAll())) {
+    return supabaseResponse;
+  }
+
   const { url, key } = getSupabaseEnv();
 
   const cookieMethods: CookieMethodsServer = {
