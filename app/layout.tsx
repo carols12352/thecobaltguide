@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
+import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,9 +16,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "The Cobalt Guide",
+  metadataBase: getSiteUrl(),
+  title: {
+    default: "The Cobalt Guide",
+    template: "%s | The Cobalt Guide",
+  },
   description:
     "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
+  applicationName: "The Cobalt Guide",
+  openGraph: {
+    type: "website",
+    siteName: "The Cobalt Guide",
+    title: "The Cobalt Guide",
+    description:
+      "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
+    images: ["/opengraph-image"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "The Cobalt Guide",
+    description:
+      "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
+    images: ["/opengraph-image"],
+  },
 };
 
 export default function RootLayout({

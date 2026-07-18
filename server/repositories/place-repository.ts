@@ -30,6 +30,20 @@ export class PlaceRepository {
     return data.id;
   }
 
+  async findActiveForSitemap(limit = 10_000) {
+    const supabase = createAdminClient();
+    const boundedLimit = Math.min(10_000, Math.max(1, limit));
+    const { data, error } = await supabase
+      .from("places")
+      .select("id, updated_at")
+      .eq("status", "active")
+      .order("updated_at", { ascending: false })
+      .limit(boundedLimit);
+
+    if (error) throw error;
+    return data ?? [];
+  }
+
   private mapViewportRows(data: Record<string, unknown>[] | null): MapPlace[] {
     return (data ?? []).map((row) => ({
       id: row.id as string,
