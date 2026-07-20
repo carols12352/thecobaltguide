@@ -1,25 +1,24 @@
-name: Vercel Preview
+name: Vercel Preview on request
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: read
 
 concurrency:
-  group: vercel-preview-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: vercel-preview-pr-${{ github.event.issue.number }}
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/deploy' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -31,16 +30,69 @@ jobs:
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     steps:
-      - name: Check out repository
+      - name: Resolve trusted PR head
+        id: pull
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            if (pull.state !== 'open') {
+              core.setFailed('Preview deployments can only be requested for an open PR.');
+              return;
+            }
+
+            const expectedRepository = `${context.repo.owner}/${context.repo.repo}`;
+            if (pull.head.repo?.full_name !== expectedRepository) {
+              core.setFailed('Preview deployments are restricted to branches in this repository.');
+              return;
+            }
+
+            core.setOutput('sha', pull.head.sha);
+            core.setOutput('head_label', pull.head.label);
+
+      - name: Reply that preview deployment started
+        id: notice
+        uses: actions/github-script@v9
+        env:
+          PR_HEAD_LABEL: ${{ steps.pull.outputs.head_label }}
+          PR_HEAD_SHA: ${{ steps.pull.outputs.sha }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              '## Preview deployment started 🚀',
+              '',
+              `Branch: \`${process.env.PR_HEAD_LABEL}\``,
+              `Commit: \`${process.env.PR_HEAD_SHA.slice(0, 7)}\``,
+              `Requested by: @${context.actor}`,
+              '',
+              `[Follow the workflow run](${runUrl})`,
+            ].join('\n');
+            const { data: comment } = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+            core.setOutput('comment_id', comment.id);
+
+      - name: Check out requested PR commit
         uses: actions/checkout@v7
         with:
+          ref: ${{ steps.pull.outputs.sha }}
           persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
 
       - name: Verify deployment credentials
         shell: bash
@@ -53,7 +105,7 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@56.2.0
 
-      - name: Deploy to Vercel
+      - name: Deploy requested PR preview
         id: deploy
         shell: bash
         run: |
@@ -61,3 +113,43 @@ jobs:
           echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
           echo "### Vercel Preview deployment" >> "$GITHUB_STEP_SUMMARY"
           echo "[$deployment_url]($deployment_url)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update PR with deployment result
+        if: ${{ always() && steps.notice.outputs.comment_id }}
+        uses: actions/github-script@v9
+        env:
+          DEPLOYMENT_OUTCOME: ${{ steps.deploy.outcome }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+          PR_HEAD_LABEL: ${{ steps.pull.outputs.head_label }}
+          PR_HEAD_SHA: ${{ steps.pull.outputs.sha }}
+          START_COMMENT_ID: ${{ steps.notice.outputs.comment_id }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const succeeded = process.env.DEPLOYMENT_OUTCOME === 'success';
+            const body = succeeded
+              ? [
+                  '## Preview deployment ready ✅',
+                  '',
+                  `Preview: ${process.env.DEPLOYMENT_URL}`,
+                  `Branch: \`${process.env.PR_HEAD_LABEL}\``,
+                  `Commit: \`${process.env.PR_HEAD_SHA.slice(0, 7)}\``,
+                  '',
+                  `[View the workflow run](${runUrl})`,
+                ].join('\n')
+              : [
+                  '## Preview deployment failed ❌',
+                  '',
+                  `Branch: \`${process.env.PR_HEAD_LABEL}\``,
+                  `Commit: \`${process.env.PR_HEAD_SHA.slice(0, 7)}\``,
+                  '',
+                  `[Inspect the workflow run](${runUrl})`,
+                ].join('\n');
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: Number(process.env.START_COMMENT_ID),
+              body,
+            });
