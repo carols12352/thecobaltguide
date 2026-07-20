@@ -20,6 +20,7 @@ import {
 import { isCityLevelZoom } from "@/lib/map/zoom-threshold";
 import { placeRepository } from "@/server/repositories/place-repository";
 import type { CreatePlaceInput } from "@/server/validation/schemas";
+import { findGooglePlaceId } from "@/server/geocoding/google-places";
 import type { MapCitySummary, MapPlace } from "@/types/domain";
 
 export class PlaceService {
@@ -298,7 +299,8 @@ export class PlaceService {
       };
     }
 
-    const place = await placeRepository.create(input, userId);
+    const googlePlaceId = await findGooglePlaceId(input);
+    const place = await placeRepository.create(input, userId, googlePlaceId);
     await invalidatePlaceReadCaches(place.id);
     await invalidateAdminCaches();
     return { created: true as const, place };

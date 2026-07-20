@@ -39,6 +39,12 @@ vi.mock("@/server/repositories/place-repository", () => ({
   placeRepository: repoMocks,
 }));
 
+const googlePlacesMocks = vi.hoisted(() => ({
+  findGooglePlaceId: vi.fn(),
+}));
+
+vi.mock("@/server/geocoding/google-places", () => googlePlacesMocks);
+
 import { placeService } from "@/server/services/place-service";
 
 const samplePlace = {
@@ -61,6 +67,7 @@ describe("placeService cache integration", () => {
     cacheMocks.getCachedPlace.mockResolvedValue(null);
     cacheMocks.getCachedSearch.mockResolvedValue(null);
     repoMocks.findPossibleDuplicates.mockResolvedValue([]);
+    googlePlacesMocks.findGooglePlaceId.mockResolvedValue("google-place-1");
     repoMocks.getDefaultCardProductId.mockResolvedValue("card-1");
   });
 
@@ -275,6 +282,11 @@ describe("placeService cache integration", () => {
     );
 
     expect(cacheMocks.invalidatePlaceReadCaches).toHaveBeenCalledWith("place-1");
+    expect(repoMocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Test Cafe" }),
+      "user-1",
+      "google-place-1",
+    );
   });
 
   it("records Redis timing for cached search results", async () => {

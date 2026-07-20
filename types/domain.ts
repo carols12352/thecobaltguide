@@ -70,6 +70,7 @@ export interface PlaceDetail {
   status: PlaceStatus;
   brandId: string | null;
   brandName: string | null;
+  googlePlaceId: string | null;
   summary: PlaceSummary | null;
 }
 

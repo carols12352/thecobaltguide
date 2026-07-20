@@ -11,6 +11,7 @@ export type AdminPlaceFieldUpdates = {
   status?: string;
   latitude?: number;
   longitude?: number;
+  googlePlaceId?: string | null;
 };
 
 export class ModerationWriteRepository {
@@ -24,6 +25,7 @@ export class ModerationWriteRepository {
     if (updates.category) dbUpdates.category = updates.category;
     if (updates.acceptsAmex !== undefined) dbUpdates.accepts_amex = updates.acceptsAmex;
     if (updates.status) dbUpdates.status = updates.status;
+    if ("googlePlaceId" in updates) dbUpdates.google_place_id = updates.googlePlaceId;
     if (typeof updates.latitude === "number" && typeof updates.longitude === "number") {
       dbUpdates.location = `SRID=4326;POINT(${updates.longitude} ${updates.latitude})`;
     }

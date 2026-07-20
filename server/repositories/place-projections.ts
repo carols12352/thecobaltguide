@@ -108,6 +108,7 @@ export function projectPlaceDetail(
     status: place.status as PlaceDetail["status"],
     brandId: place.brand_id as string | null,
     brandName: brand?.name ?? null,
+    googlePlaceId: place.google_place_id as string | null,
     summary: placeSummary,
   };
 }

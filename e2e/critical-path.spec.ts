@@ -34,6 +34,19 @@ test("sign in → submit → moderate → account history", async ({ browser }) 
   const user = await test.step("sign in as the reporting user", () =>
     signIn(browser, fixture.userEmail!, fixture.userPassword!),
   );
+  await test.step("offer safe links to external map providers", async () => {
+    await user.page.goto(`/place/${fixture.placeId}`);
+
+    for (const provider of ["Google Maps", "Apple Maps"]) {
+      const link = user.page.getByRole("link", {
+        name: new RegExp(`${provider}.*opens in a new tab`, "i"),
+      });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute("target", "_blank");
+      await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      await expect(link).toHaveAttribute("href", /^https:\/\//);
+    }
+  });
   const report = await test.step("submit a report for moderation", async () => {
     const submitted = await user.context.request.post(
       `/api/places/${fixture.placeId}/reports`,
