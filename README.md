@@ -173,8 +173,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run baseline:api` | Record API latency, cache headers, and `Server-Timing` |
 | `npm run replace:rewards-canada` | Validate and preview the reviewed seed replacement |
 | `npm run replace:rewards-canada -- --apply --replace` | Atomically replace the reviewed seed |
-| `npm run backfill:google-place-ids -- --limit=100` | Preview Google Place ID matches |
-| `npm run backfill:google-place-ids -- --limit=100 --write` | Save Google Place ID matches after review |
+| `npm run backfill:google-place-ids -- --limit=100` | Preview high-confidence, manual-review, and unmatched Google Place ID counts |
+| `npm run backfill:google-place-ids -- --limit=100 --write` | Save only high-confidence Google Place ID matches; leave all others on the URL fallback |
 
 Standard verification before submitting changes:
 

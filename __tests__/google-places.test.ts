@@ -17,12 +17,25 @@ afterEach(() => {
 });
 
 describe("Google Places lookup", () => {
-  it("requests only a nearby place ID", async () => {
+  it("returns an ID only when name, distance, and address evidence are strong", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ places: [{ id: "ChIJ-test" }] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          places: [
+            {
+              id: "ChIJ-test",
+              displayName: { text: "Test Cafe" },
+              formattedAddress: "100 Queen St W, Toronto, ON M5H 2N2, Canada",
+              location: { latitude: 43.6533, longitude: -79.3832 },
+              businessStatus: "OPERATIONAL",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -34,7 +47,8 @@ describe("Google Places lookup", () => {
     expect(url).toBe("https://places.googleapis.com/v1/places:searchText");
     expect(init.headers).toMatchObject({
       "X-Goog-Api-Key": "secret-key",
-      "X-Goog-FieldMask": "places.id",
+      "X-Goog-FieldMask":
+        "places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus",
     });
     expect(JSON.parse(init.body)).toMatchObject({
       textQuery: "Test Cafe, 100 Queen St W, Toronto, ON, M5H 2N2, CA",
@@ -47,6 +61,30 @@ describe("Google Places lookup", () => {
         },
       },
     });
+  });
+
+  it("rejects a distant or differently named first result", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            places: [
+              {
+                id: "ChIJ-wrong",
+                displayName: { text: "Different Store" },
+                formattedAddress: "100 Queen St W, Toronto, ON M5H 2N2, Canada",
+                location: { latitude: 43.7, longitude: -79.4 },
+                businessStatus: "OPERATIONAL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(findGooglePlaceId(input, "secret-key")).resolves.toBeNull();
   });
 
   it("fails open when the API is unavailable or not configured", async () => {

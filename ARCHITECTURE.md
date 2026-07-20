@@ -192,9 +192,9 @@ lib/map/external-map-links.ts
 - Links use ordinary HTTPS endpoints, accessible provider labels, `target="_blank"`, and `rel="noopener noreferrer"`.
 - Provider icons are fetched by the browser from Simple Icons' CDN. They are presentation-only; link generation and navigation remain usable independently of icon loading.
 
-Migration `20260720190000_google_place_ids.sql` adds nullable `places.google_place_id` plus a partial index for populated values. New or moderated places can resolve a Place ID through `server/geocoding/google-places.ts`: the server sends a text query and a 100-metre coordinate bias to Places API (New), requests only `places.id`, and applies a five-second timeout. A missing key, provider error, timeout, or empty result returns `null` and does not block the authoritative place write.
+Migration `20260720190000_google_place_ids.sql` adds nullable `places.google_place_id` plus a partial index for populated values. New or moderated places can resolve a Place ID through `server/geocoding/google-places.ts`: the server sends a text query and a 100-metre coordinate bias to Places API (New), requests the candidate ID plus the minimum identity/location fields needed for confidence checks, and applies a five-second timeout. A missing key, provider error, timeout, empty result, or ambiguous candidate returns `null` and does not block the authoritative place write.
 
-Existing records use the explicit `supabase/scripts/backfill-google-place-ids.ts` operation. It scans at most 100 records by default, caps a run at 1,000, and only reports matches unless `--write` is present. Writes target still-null IDs and invalidate place/admin caches. Operators must review preview results and provider terms before writing a batch.
+Existing records use the explicit `supabase/scripts/backfill-google-place-ids.ts` operation. It scans at most 100 records by default, caps a run at 1,000, and classifies candidates by merchant-name similarity, coordinate distance, postal code, and street number. Even with `--write`, only high-confidence candidates within 150 metres are stored; ambiguous and unmatched records remain null and continue using the external-link URL fallback until corrected through community reports or later maintenance. Writes target still-null IDs and invalidate place/admin caches.
 
 ### Geocoding
 

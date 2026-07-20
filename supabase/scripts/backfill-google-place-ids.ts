@@ -1,6 +1,6 @@
 import { createAdminClient } from "../../lib/supabase/admin";
 import { parseGeoLocation } from "../../lib/map/parse-location";
-import { findGooglePlaceId } from "../../server/geocoding/google-places";
+import { findGooglePlaceMatch } from "../../server/geocoding/google-places";
 import { invalidatePlaceReadCaches } from "../../lib/cache/place-cache";
 import { invalidateAdminCaches } from "../../lib/cache/admin-cache";
 
@@ -29,13 +29,18 @@ async function main() {
 
   if (error) throw error;
 
-  let matched = 0;
+  let highConfidence = 0;
+  let manualReview = 0;
+  let noMatch = 0;
   let updated = 0;
   for (const place of data ?? []) {
     const coordinates = parseGeoLocation(place.location);
-    if (!coordinates) continue;
+    if (!coordinates) {
+      noMatch += 1;
+      continue;
+    }
 
-    const googlePlaceId = await findGooglePlaceId({
+    const match = await findGooglePlaceMatch({
       name: place.name,
       addressLine1: place.address_line1,
       city: place.city,
@@ -46,13 +51,20 @@ async function main() {
       longitude: coordinates.longitude,
     });
 
-    if (!googlePlaceId) continue;
-    matched += 1;
+    if (!match) {
+      noMatch += 1;
+      continue;
+    }
+    if (match.confidence !== "high") {
+      manualReview += 1;
+      continue;
+    }
+    highConfidence += 1;
 
     if (write) {
       const { error: updateError } = await supabase
         .from("places")
-        .update({ google_place_id: googlePlaceId })
+        .update({ google_place_id: match.placeId })
         .eq("id", place.id)
         .is("google_place_id", null);
       if (updateError) throw updateError;
@@ -63,7 +75,14 @@ async function main() {
 
   if (updated > 0) await invalidateAdminCaches();
   console.log(
-    JSON.stringify({ scanned: data?.length ?? 0, matched, updated, write }),
+    JSON.stringify({
+      scanned: data?.length ?? 0,
+      highConfidence,
+      manualReview,
+      noMatch,
+      updated,
+      write,
+    }),
   );
 }
 
