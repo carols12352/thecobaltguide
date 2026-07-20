@@ -80,6 +80,17 @@ export const ADMIN_TABS: {
   { id: "users", label: "Users", adminOnly: true },
 ];
 
+export function adminTabIndexForKey(
+  currentIndex: number,
+  total: number,
+  key: "ArrowLeft" | "ArrowRight" | "Home" | "End",
+) {
+  if (total <= 0) return -1;
+  if (key === "Home") return 0;
+  if (key === "End") return total - 1;
+  return (currentIndex + (key === "ArrowRight" ? 1 : -1) + total) % total;
+}
+
 export function formatAdminDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, {
     year: "numeric",

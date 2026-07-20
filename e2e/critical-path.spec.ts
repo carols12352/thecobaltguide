@@ -15,7 +15,7 @@ async function signIn(browser: Browser, email: string, password: string) {
   await page.getByLabel("Email").fill(email);
   await page.locator("#sign-in-password").fill(password);
   await page.getByRole("button", { name: /sign in/i }).click();
-  await expect(page).not.toHaveURL(/\/login/);
+  await expect(page).toHaveURL(/\/account(?:\?.*)?$/, { timeout: 20_000 });
   return { context, page };
 }
 
@@ -23,7 +23,7 @@ test("sign in → submit → moderate → account history", async ({ browser }) 
   // `next dev` compiles each page and Route Handler on first use in CI. The
   // complete two-session workflow needs more than Playwright's 30s default on
   // a cold runner even when every individual operation succeeds.
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
 
   test.skip(
     !fixture.userEmail || !fixture.userPassword || !fixture.moderatorEmail
@@ -69,6 +69,25 @@ test("sign in → submit → moderate → account history", async ({ browser }) 
     await user.page.goto("/account");
     await user.page.getByRole("button", { name: "archive" }).first().click();
     await expect(user.page.getByText("Reviewed", { exact: true })).toBeVisible();
+  });
+  await test.step("trap and restore focus in the account deletion dialog", async () => {
+    const trigger = user.page.getByRole("button", { name: "Delete account" });
+    await trigger.click();
+
+    const dialog = user.page.getByRole("dialog", {
+      name: "Permanently delete account?",
+    });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Confirmation")).toBeFocused();
+
+    await user.page.keyboard.press("Shift+Tab");
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await user.page.keyboard.press("Tab");
+    await expect(dialog.getByLabel("Confirmation")).toBeFocused();
+
+    await user.page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
   });
   await user.context.close();
   await moderator.context.close();

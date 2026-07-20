@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { SubmitReportPage } from "@/components/reports/submit-page";
+
+export const metadata: Metadata = {
+  title: "Submit a report",
+  robots: { index: false, follow: false },
+};
 
 export default function SubmitPage() {
   return (

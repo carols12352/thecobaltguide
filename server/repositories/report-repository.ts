@@ -249,7 +249,11 @@ export class ReportRepository {
     if (error) {
       throw new Error(`Admin reports query failed: ${error.message}`);
     }
-    return data;
+    return (data ?? []).map((row) => ({
+      ...row,
+      places: Array.isArray(row.places) ? (row.places[0] ?? null) : row.places,
+      reporter: Array.isArray(row.reporter) ? (row.reporter[0] ?? null) : row.reporter,
+    }));
   }
 
   private mapReport(row: Record<string, unknown>): MultiplierReport {

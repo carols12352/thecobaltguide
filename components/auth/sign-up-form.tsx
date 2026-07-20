@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/password-input";
 import { Label } from "@/components/ui/label";
 import { formatAuthError } from "@/lib/auth/errors";
-import { getExistingAccountMessage } from "@/lib/auth/account-hints-client";
 import { startEmailCooldown } from "@/lib/auth/email-cooldown";
 import { createClient } from "@/lib/supabase/client";
 
@@ -74,16 +73,13 @@ export function SignUpForm() {
     setLoading(false);
 
     if (signUpError) {
-      const existingMessage = await getExistingAccountMessage(trimmedEmail);
-      setError(existingMessage ?? formatAuthError(signUpError));
+      setError(formatAuthError(signUpError));
       return;
     }
 
     if (data.user?.identities?.length === 0) {
-      const existingMessage = await getExistingAccountMessage(trimmedEmail);
       setError(
-        existingMessage ??
-          "An account with this email already exists. Sign in instead, or use Continue with Google.",
+        "Could not create an account with those details. Try signing in or resetting your password.",
       );
       return;
     }

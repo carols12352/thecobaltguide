@@ -130,3 +130,118 @@ describe("transactional report workflow", () => {
     expect(report.data?.status).toBe("removed");
   });
 });
+
+describe("transactional account deletion", () => {
+  const suffix = Date.now();
+  let userId: string;
+  let placeId: string;
+  let cardId: string;
+  let reportId: string;
+  let flagId: string;
+
+  beforeAll(async () => {
+    const created = await admin.auth.admin.createUser({
+      email: `integration-account-delete-${suffix}@example.com`,
+      password: "Integration-Password-123!",
+      email_confirm: true,
+    });
+    if (created.error || !created.data.user) throw created.error;
+    userId = created.data.user.id;
+
+    const card = await admin
+      .from("card_products")
+      .select("id")
+      .eq("slug", "amex-cobalt-ca")
+      .single();
+    if (card.error) throw card.error;
+    cardId = card.data.id;
+
+    const place = await admin
+      .from("places")
+      .insert({
+        name: "Integration Privacy Cafe",
+        normalized_name: "integration privacy cafe",
+        address_line1: "2 Integration Way",
+        city: "Toronto",
+        province: "ON",
+        postal_code: "M5V1A1",
+        country_code: "CA",
+        location: "SRID=4326;POINT(-79.381 43.651)",
+        category: "dining",
+        status: "active",
+        created_by: userId,
+      })
+      .select("id")
+      .single();
+    if (place.error) throw place.error;
+    placeId = place.data.id;
+
+    const report = await admin
+      .from("multiplier_reports")
+      .insert({
+        place_id: placeId,
+        user_id: userId,
+        card_product_id: cardId,
+        multiplier: "5",
+        transaction_date: "2026-07-01",
+        payment_context: "in_store",
+        notes: "private account deletion note",
+        report_kind: "update",
+      })
+      .select("id")
+      .single();
+    if (report.error) throw report.error;
+    reportId = report.data.id;
+
+    const flag = await admin
+      .from("place_flags")
+      .insert({
+        place_id: placeId,
+        user_id: userId,
+        reason: "wrong_address",
+        details: "private account deletion detail",
+      })
+      .select("id")
+      .single();
+    if (flag.error) throw flag.error;
+    flagId = flag.data.id;
+  });
+
+  afterAll(async () => {
+    if (flagId) await admin.from("place_flags").delete().eq("id", flagId);
+    if (reportId) await admin.from("multiplier_reports").delete().eq("id", reportId);
+    if (placeId) await admin.from("places").delete().eq("id", placeId);
+    if (userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it("removes identity and free-form data while retaining anonymous evidence", async () => {
+    const deleted = await admin.rpc("delete_own_account_transactional", {
+      p_user_id: userId,
+    });
+    if (deleted.error) throw deleted.error;
+    expect(deleted.data).toMatchObject({
+      deleted: true,
+      reportsAnonymized: 1,
+      flagsAnonymized: 1,
+      affectedPlaceIds: [placeId],
+    });
+
+    const [profile, report, flag] = await Promise.all([
+      admin.from("profiles").select("id").eq("id", userId),
+      admin
+        .from("multiplier_reports")
+        .select("user_id, notes")
+        .eq("id", reportId)
+        .single(),
+      admin
+        .from("place_flags")
+        .select("user_id, details")
+        .eq("id", flagId)
+        .single(),
+    ]);
+
+    expect(profile.data ?? []).toEqual([]);
+    expect(report.data).toEqual({ user_id: null, notes: null });
+    expect(flag.data).toEqual({ user_id: null, details: null });
+  });
+});

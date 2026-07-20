@@ -21,11 +21,12 @@ if (resultText) {
     markdown += `| ${escapeCell(row.path)} | ${row.samples} | ${row.firstMs} ms | ${latencyPair(row.p50Ms, row.p95Ms)} | ${latencyPair(row.warmP50Ms, row.warmP95Ms)} | ${transition(row.firstCacheStatus, row.lastCacheStatus)} | ${transition(row.firstAgeSeconds, row.lastAgeSeconds, "s")} |\n`;
   }
 
-  markdown += "\n| API path | Cache-Control | Server-Timing first | Server-Timing last |\n";
-  markdown += "| --- | --- | --- | --- |\n";
+  markdown += "\n| API path | Cache-Control | Origin probe | Origin time | Origin Server-Timing |\n";
+  markdown += "| --- | --- | --- | ---: | --- |\n";
   for (const row of rows) {
-    markdown += `| ${escapeCell(row.path)} | ${escapeCell(row.cacheControl)} | ${escapeCell(row.firstServerTiming)} | ${escapeCell(row.lastServerTiming)} |\n`;
+    markdown += `| ${escapeCell(row.path)} | ${escapeCell(row.cacheControl)} | ${escapeCell(row.originCacheStatus)} | ${withSuffix(row.originProbeMs, " ms")} | ${escapeCell(row.originServerTiming)} |\n`;
   }
+  markdown += "\nThe origin probe sends `Pragma: no-cache` and `Cache-Control: no-cache`. Treat `Server-Timing` as origin evidence only when the probe status is `MISS` or `REVALIDATED`; normal `HIT` samples do not invoke the application.\n";
 } else {
   markdown += "The measurement did not produce a result file. Open the workflow run for the failure details.\n";
 }

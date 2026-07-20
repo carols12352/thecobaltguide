@@ -7,6 +7,9 @@ interface RateLimitEntry {
 }
 
 const memoryStore = new Map<string, RateLimitEntry>();
+export const MEMORY_RATE_LIMIT_MAX_ENTRIES = 10_000;
+const MEMORY_SWEEP_INTERVAL = 64;
+let memoryWritesSinceSweep = 0;
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -14,7 +17,28 @@ export interface RateLimitResult {
   resetAt: number;
 }
 
-function checkRateLimitMemory(
+function pruneMemoryStore(now: number) {
+  for (const [storedKey, entry] of memoryStore) {
+    if (now >= entry.resetAt) memoryStore.delete(storedKey);
+  }
+
+  while (memoryStore.size >= MEMORY_RATE_LIMIT_MAX_ENTRIES) {
+    let oldestKey: string | null = null;
+    let oldestResetAt = Number.POSITIVE_INFINITY;
+
+    for (const [storedKey, entry] of memoryStore) {
+      if (entry.resetAt < oldestResetAt) {
+        oldestKey = storedKey;
+        oldestResetAt = entry.resetAt;
+      }
+    }
+
+    if (!oldestKey) break;
+    memoryStore.delete(oldestKey);
+  }
+}
+
+export function checkRateLimitMemory(
   key: string,
   limit: number,
   windowMs: number,
@@ -23,6 +47,15 @@ function checkRateLimitMemory(
   const entry = memoryStore.get(key);
 
   if (!entry || now >= entry.resetAt) {
+    memoryWritesSinceSweep++;
+    if (
+      memoryWritesSinceSweep >= MEMORY_SWEEP_INTERVAL ||
+      memoryStore.size >= MEMORY_RATE_LIMIT_MAX_ENTRIES
+    ) {
+      pruneMemoryStore(now);
+      memoryWritesSinceSweep = 0;
+    }
+
     const resetAt = now + windowMs;
     memoryStore.set(key, { count: 1, resetAt });
     return { allowed: true, remaining: limit - 1, resetAt };
@@ -38,6 +71,15 @@ function checkRateLimitMemory(
     remaining: limit - entry.count,
     resetAt: entry.resetAt,
   };
+}
+
+export function resetMemoryRateLimitStoreForTests() {
+  memoryStore.clear();
+  memoryWritesSinceSweep = 0;
+}
+
+export function getMemoryRateLimitStoreSizeForTests() {
+  return memoryStore.size;
 }
 
 async function checkRateLimitRedis(

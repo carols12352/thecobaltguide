@@ -1,16 +1,35 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PlaceDetails } from "@/components/places/place-details";
 import { Button } from "@/components/ui/button";
-import { placeService } from "@/server/services/place-service";
+import { getPlacePageData } from "./place-page-data";
 
-export default async function PlacePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+type PlacePageProps = { params: Promise<{ id: string }> };
+
+export async function generateMetadata({ params }: PlacePageProps): Promise<Metadata> {
   const { id } = await params;
-  const place = await placeService.getPlaceById(id);
+  const place = await getPlacePageData(id);
+
+  if (!place) return { title: "Place not found", robots: { index: false, follow: false } };
+
+  const location = [place.city, place.province].filter(Boolean).join(", ");
+  const multiplier = place.summary?.currentMultiplier
+    ? `${place.summary.currentMultiplier}× reported multiplier`
+    : "community multiplier reports";
+  const description = `${place.name}${location ? ` in ${location}` : ""}: ${multiplier}, recency, and confidence context.`;
+
+  return {
+    title: place.name,
+    description,
+    alternates: { canonical: `/place/${place.id}` },
+    openGraph: { title: place.name, description, url: `/place/${place.id}` },
+  };
+}
+
+export default async function PlacePage({ params }: PlacePageProps) {
+  const { id } = await params;
+  const place = await getPlacePageData(id);
 
   if (!place) notFound();
 

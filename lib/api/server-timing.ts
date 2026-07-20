@@ -24,3 +24,12 @@ export class ServerTiming {
       .join(", ");
   }
 }
+
+export function withServerTiming(
+  response: Response,
+  timing: ServerTiming,
+): Response {
+  const header = timing.headerValue();
+  if (header) response.headers.set("Server-Timing", header);
+  return response;
+}

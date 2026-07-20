@@ -1,8 +1,8 @@
 # Cobalt Merchant Map — Architecture
 
-> Last reviewed: 2026-07-16 against `main` at `836667b` before this documentation/code-organization change.
+> Last reviewed: 2026-07-20 after completion of Stage C (C1-C4).
 >
-> Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, known gaps, and the next planned milestone.
+> Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, release gates, and deferred product opportunities.
 
 ## 1. Architecture decision
 
@@ -12,7 +12,7 @@ The application is a **modular monolith**:
 - Services own business rules, orchestration, aggregation, and cache coordination.
 - Repositories own Supabase queries and transactional PostgreSQL RPC calls.
 - Supabase provides Auth, PostgreSQL, PostGIS, and Row Level Security (RLS).
-- Upstash Redis is optional for distributed cache and rate limiting.
+- Upstash Redis is configured in the deployed environment for distributed cache and rate limiting; local development still supports the documented in-memory/direct-database fallback.
 - Mapbox and Nominatim provide synchronous geocoding behind one provider boundary.
 
 One deployable application is the right topology for the current product, team, and transaction model. There is no measured need for microservices, Kubernetes, a read replica, a dedicated search service, or vector tiles.
@@ -24,11 +24,12 @@ One deployable application is the right topology for the current product, team, 
 | TypeScript/TSX | About 18.2k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Unit baseline | 44 files / 231 Vitest tests |
-| Live database coverage | 16 RLS/grant tests and 3 transactional integration tests defined |
-| Browser coverage | One environment-backed Playwright critical path |
-| CI | Lint, typecheck, unit tests, build, live database suites, E2E, and on-demand performance baseline workflows |
-| Monitoring | Sentry server integration plus structured operational logs; deployment alert configuration remains external |
+| Unit baseline | 54 files / 254 Vitest tests |
+| Live database coverage | 16 RLS/grant tests and 3 transactional integration tests passed on `main@0b11f58` in GitHub Actions |
+| Browser coverage | Six fixture-free Playwright cases pass locally; the environment-backed critical path passed on `main@0b11f58` and now includes dialog focus verification when fixtures are present |
+| CI | Lint, typecheck, unit tests, build, live database suites, E2E, architecture assertions, Lighthouse budgets, and on-demand API performance baselines |
+| Cache/limits | Upstash Redis is active in deployment; dashboard traffic and Sentry child spans verify runtime cache use, while invalidation and fallback evidence remains open |
+| Monitoring | Sentry server tracing/error ingestion is active in deployment; privacy-filtered browser instrumentation is implemented and awaits deployed ingestion verification |
 
 These numbers are a point-in-time orientation aid, not architecture targets.
 
@@ -47,7 +48,7 @@ Next.js modular monolith
   ├─ Repositories: Supabase reads/writes and Postgres RPCs
   └─ Geocoding provider client: Mapbox/Nominatim transport policy
           │
-          ├──────────────► Upstash Redis (optional)
+          ├──────────────► Upstash Redis (configured in deployment)
           │                 cache and distributed limits
           ▼
 Supabase
@@ -159,6 +160,8 @@ Global cache versions allow mutations to bypass stale map/search data without sc
 
 Public map responses expose `Server-Timing` for Redis and database diagnosis. Repeatable sampling is documented in `docs/performance-baseline.md`.
 
+Deployment evidence on 2026-07-17 shows sustained Upstash command traffic/storage and Sentry child spans from map/viewport requests to the Upstash pipeline. This verifies that the deployed application is exercising the Redis path and provides observed cache-hit evidence. Full cache acceptance still requires version-bump invalidation after report and moderation mutations, distributed rate-limit verification, and graceful fallback when Redis is unavailable. Both the write token and read-only token are required for the intended production behavior.
+
 ## 8. External systems and deployment
 
 ### Geocoding
@@ -171,13 +174,30 @@ Public map responses expose `Server-Timing` for Redis and database diagnosis. Re
 
 ### Monitoring
 
-The Sentry Next.js server SDK and request-error instrumentation are implemented. Structured JSON logs continue without a DSN. Production readiness still requires deployment credentials, source-map configuration, and owned error-rate/p95 alert thresholds.
+The Sentry deployment credentials, Next.js server SDK, and request-error instrumentation are configured. Production traces observed on 2026-07-17 include Next.js page/API transactions and child spans for Upstash and Supabase calls, verifying server ingestion and tracing. Structured JSON logs continue as a fallback. `instrumentation-client.ts` now initializes the browser SDK only in production, disables default PII, samples navigation traces, and sanitizes user/request/cookie/auth/query and sensitive breadcrumb/span data. Deployed client-event ingestion still requires an operator spot-check.
+
+The production project also shows a real captured error and an Error Monitor with an active alert rule, completing the C1 ingestion/alert evidence. Readable TypeScript source maps and release-to-commit correlation should still be spot-checked when investigating an error, but they no longer block C1 acceptance. Session Replay is not required; if introduced later, sensitive account, address, and report fields must be masked by default.
+
+### Pre-production release checklist
+
+Stage C is complete in code. The following are operational release gates, not unfinished Stage C feature work:
+
+- [ ] Confirm the release commit passes lint, typecheck, unit tests, production build, architecture assertions, Lighthouse budgets, live RLS/integration suites, and the fixture-backed E2E workflow. Treat an isolated Lighthouse failure as a signal to rerun and investigate, not as permission to lower the budget.
+- [ ] Apply every migration through `20260717130000` to the intended Supabase project and record the migration status. The 2026-07-14 hosted verification predates the transactional and privacy migrations.
+- [ ] Create a Vercel Preview with `/deploy`, run `/performance <preview_url> 30`, and retain the workflow links. Check CDN warm latency separately from the origin probe and inspect `Server-Timing` for Redis/database regressions.
+- [ ] Smoke-test sign-in, map/search, geocoding, report submission/removal, moderation, account export/deletion, and mutation-driven cache invalidation against disposable fixtures or the intended environment.
+- [ ] Verify Redis-backed cache and distributed rate limiting, then exercise the documented direct-database and in-memory fallback behavior without exposing credentials.
+- [ ] Verify a sanitized browser error and navigation trace in deployed Sentry, confirm the alert owner, and spot-check source-map readability and release-to-commit correlation.
+- [ ] Review report-only CSP findings for Supabase, OpenFreeMap/Mapbox, Google OAuth, Nominatim, and Sentry before deciding whether to enforce the policy.
+- [ ] Record the production commit SHA, migration state, CI/deployment evidence, smoke result, operator, and rollback target in the release record.
+
+The dependency audit currently reports two moderate advisories through Next.js' nested PostCSS version. A force fix would introduce an invalid major downgrade; upgrade only through a verified Next.js release containing the corrected dependency.
 
 ### Deployment topology
 
 - Vercel or another Node.js 22+ host runs the monolith.
-- GitHub Actions is the only automatic Vercel Preview path; native Vercel Git deployments are disabled.
-- `main` is the preview/development branch covered by the workflow.
+- GitHub Actions is the only Vercel Preview path; native Vercel Git deployments are disabled and pushes do not deploy automatically.
+- An authorized `/deploy` PR comment runs the workflow definition from `main` and deploys that PR's verified same-repository head SHA.
 - `release` is excluded and separately managed.
 
 The primary hosted database was inspected on 2026-07-14 for the RLS/grant hardening chain. That verification predates `20260715120000`; every target environment must apply the complete chain and run live tests before deployment.
@@ -212,31 +232,72 @@ The documentation commit `75133ef` remains part of the same legacy history.
 
 These labels describe completed history only. New work must use a new milestone name.
 
-## 10. Next-step plan: Stage C
+## 10. Completed milestone: Stage C
 
-Stage C is intentionally ordered. Finish operational evidence and remaining high-value boundaries before broadening product scope.
+Stage C was completed on 2026-07-20 through C1-C4. Redis and Sentry configuration is recorded as current infrastructure state, not as a rewrite of the completed Stage A or Stage B history. Remaining deployment checks are tracked by the pre-production release checklist rather than by extending the milestone.
 
 ### C1 — close release evidence
 
-1. Apply every migration through `20260715150000` to a disposable environment and the intended hosted environment.
-2. Run `test:rls`, `test:integration`, and the Playwright critical path against disposable fixtures.
-3. Configure Sentry source maps and owned error-rate/p95 alerts.
-4. Perform post-deploy smoke checks for auth, map grid/viewport, geocoding quotas/fallback, report submission, moderation, and cache invalidation.
+Status: **complete as of 2026-07-17**, based on GitHub Actions results, hosted database synchronization, Upstash/Sentry operator evidence, and production use of the critical paths.
 
-Exit criteria: migration history is recorded, all live suites pass, alert ownership exists, and smoke evidence is linked from the release record.
+1. Apply every migration through `20260715150000` to a disposable environment and the intended hosted environment. The disposable GitHub Actions environment is verified, and `supabase db push` reported the linked hosted database up to date on 2026-07-17.
+2. Run `test:rls`, `test:integration`, and the Playwright critical path against disposable fixtures. These suites are verified on GitHub Actions.
+3. Verify Redis use, mutation-driven version invalidation, distributed rate limits, and direct-database/in-memory fallback behavior. Runtime Redis use and cache hits are verified; invalidation, distributed-limit, and fallback drills remain open.
+4. Verify deployed Sentry ingestion and owned alerts. Server tracing, real error ingestion, and an Error Monitor alert rule are verified; source-map readability remains an operational spot-check.
+5. Perform post-deploy smoke checks for auth, map grid/viewport, geocoding quotas/fallback, report submission, moderation, and cache invalidation. Normal production use plus the critical-path E2E provides the accepted C1 smoke evidence.
 
-### C2 — reduce measured code hotspots
+Exit criteria: migration history is recorded, all live suites pass, Redis behavior is evidenced, Sentry events are actionable, alert ownership exists, and smoke evidence is linked from the release record.
 
-1. Continue splitting `components/admin/admin-dashboard.tsx` by tab as each tab is changed; API models and reusable presentation pieces are already separated.
-2. Split the 700+ line `place-repository.ts` read facade into public-map, public-detail/search, and admin query owners without duplicating query logic.
-3. Move the remaining direct database access in `summary-service.ts` behind a repository boundary.
-4. Add contract tests around each moved projection before removing compatibility exports.
+Recorded C1 evidence:
 
-Exit criteria: dependencies remain route → service → repository, moved behavior has tests, and no compatibility layer is removed without verified callers.
+- [Database security tests run 29532934270](https://github.com/carols12352/thecobaltguide/actions/runs/29532934270) passed on 2026-07-16 for `main@0b11f58`; the migration startup, RLS policy suite, and transactional workflow suite all completed successfully.
+- [End-to-end run 29532934307](https://github.com/carols12352/thecobaltguide/actions/runs/29532934307) passed on the same commit; Supabase startup/migrations, fixture creation, Chromium installation, and the sign-in → submit → moderate → account-history path all completed successfully.
+- [Performance baseline run 29533990057](https://github.com/carols12352/thecobaltguide/actions/runs/29533990057) completed 20 hosted samples per path. The map warm p50/p95 was 33/80 ms and search was 31/44 ms; both paths moved from `x-vercel-cache: MISS` to `HIT`. The sampled `Server-Timing` values were `null`, so this run proves CDN warming but is not standalone evidence of an Upstash Redis hit.
+- Operator dashboard evidence recorded on 2026-07-17 shows active Upstash command traffic and stored cache data. Sentry traces for `/api/places/map` and `/api/places/viewport` include Upstash pipeline child spans; the observed map trace uses the Redis path without a corresponding Supabase query span, providing runtime cache-hit evidence.
+- Sentry Explore recorded live Next.js page and API traces with Upstash and Supabase child spans on 2026-07-17, verifying production server ingestion and distributed tracing.
+- Sentry Error Monitors showed a captured production TypeError and an Error Monitor with one active alert on 2026-07-17, verifying real error ingestion and configured alerting.
 
-### C3 — select one bounded product feature
+### C2 — close security and privacy gaps
 
-Choose one feature only after C1. Prefer a bounded public read/filter or focused moderation improvement. For the selected feature, document:
+Status: **complete in code.** Live database/browser verification remains a pre-production release gate.
+
+1. Anonymous account-existence/provider disclosure is removed. The sign-in form uses a device-local `lastUsed` marker that stores only `google`, `password`, or `magic_link`.
+2. `next.config.ts` applies report-only CSP plus `nosniff`, referrer, permissions, frame, and production HSTS headers. The CSP permits configured Supabase, map, Mapbox, Nominatim, Google OAuth, and Sentry transport; deploy it in report-only mode before enforcement.
+3. The in-memory fallback opportunistically prunes expired entries and retains at most 10,000 keys. 429 responses are private/no-store and include `Retry-After` plus `RateLimit-Reset`.
+4. `GET /api/me/data` exports private no-store JSON. `DELETE /api/me/data` requires the literal `DELETE`, then deletes Auth/profile data and free-form user text in one database transaction. Reports and flags retain their structured evidence with `user_id` set to null; moderation logs retain audit context with `moderator_id` set to null. This retention rule preserves community summaries without retaining the deleted account identity.
+
+Exit criteria: **met in code.** The test suite covers local last-used state, header generation and actual Next response headers, bounded fallback behavior, retry metadata, destructive confirmation, and service-only database RPC access. Before release, run the migrated live database suites and browser flow against disposable fixtures.
+
+### C3 — improve rendering, browser observability, and discovery
+
+Status: **complete in code as of 2026-07-18.** Deployed browser-Sentry ingestion and the updated fixture-backed E2E remain pre-production release gates.
+
+1. `instrumentation-client.ts` captures browser errors and navigation spans in production with sampled tracing, no default PII, and explicit event sanitization.
+2. The shared header no longer performs an auth/profile read. Anonymous proxy requests without a Supabase auth cookie also avoid session verification, and the production build prerenders eight intended public routes.
+3. Account/Admin authorization and first-load data now execute at server page boundaries; every protected API mutation retains its own authorization.
+4. Safe error/not-found UI, bounded sitemap, robots policy, generated social image, private-route `noindex`, and dynamic place metadata are implemented. Place metadata and page rendering share a request-cached read.
+5. Dialog focus trap/restore and scroll locking, keyboard-operable Admin tabs, mobile overflow, reduced motion, 404/discovery/security headers, and Lighthouse budgets are automated. The home page uses three viewport-height sections; its desktop Hero map is static server-rendered UI, while the second-section MapLibre preview loads automatically at 25% visibility.
+
+Exit criteria: **met in code.** The latest local production run scored both Home and About 94/100/100/100 for performance/accessibility/best-practices/SEO. Six fixture-free Playwright cases pass; the authenticated critical path is fixture-gated. Verify a sanitized client event and navigation trace in deployed Sentry before release sign-off.
+
+### C4 — reduce measured code hotspots
+
+Status: **complete in code as of 2026-07-20.**
+
+1. `components/admin/admin-dashboard.tsx` now owns shared state and API orchestration while overview, reports, flags, places, and users render through tab-specific components in `components/admin/tabs/`.
+2. The former 700+ line `place-repository.ts` is a compatibility facade. Public map reads, public detail/search reads, admin queries, card lookup, and shared projections have distinct repository owners without duplicated projection logic.
+3. `summary-service.ts` now contains only aggregation orchestration; source reads and summary upserts are owned by `summary-repository.ts`.
+4. Projection contract tests cover viewport/map, detail, admin relation, and aggregation input shapes while compatibility exports remain available to existing services.
+
+Exit criteria: **met in code.** Typecheck, lint, the production build, and all 54 unit-test files (254 tests) pass locally.
+
+Stage C exit criteria are met. New product scope must be selected independently rather than appended to this completed milestone.
+
+## 11. Deferred product opportunity: non-point merchant data
+
+The schema already contains `merchant_multiplier_coverages` and `online_merchant_multipliers`. They could support a future public read surface that distinguishes physical places, city/province/nationwide coverage, and online-only merchants without inventing map coordinates.
+
+This is not Stage C, is not currently planned, and carries no delivery commitment. If it is selected later, define a fresh milestone and document:
 
 - owner and authorization rules;
 - data/migration and rollback behavior;
@@ -246,9 +307,11 @@ Choose one feature only after C1. Prefer a bounded public read/filter or focused
 - unit, integration, and E2E coverage;
 - observable failures and ongoing provider/moderation cost.
 
-Do not pre-build generic queues, microservices, search clusters, or multi-card UI without a selected use case.
+Likely acceptance criteria would include bounded indexed queries, cache keys and invalidation rules, explicit source attribution, search/filter integration, responsive and accessible presentation, and unit/API/E2E coverage for each merchant scope.
 
-## 11. Extraction and scaling triggers
+After this feature is measured, candidates such as shareable map-filter URLs, device-location sorting, saved merchants, or change notifications may be selected independently. Do not pre-build generic queues, microservices, search clusters, notification workers, or multi-card UI without an approved use case.
+
+## 12. Extraction and scaling triggers
 
 Continue scaling through bounded queries, indexes, cache, and horizontal Next.js instances. Consider a worker or separate service only when production evidence shows at least one of these:
 
@@ -261,7 +324,7 @@ Continue scaling through bounded queries, indexes, cache, and horizontal Next.js
 
 The first likely extraction, if a selected feature needs it, is an asynchronous import/notification worker—not separate place, report, user, and moderation services that currently share transactions.
 
-## 12. Architecture principles
+## 13. Architecture principles
 
 1. Code and migrations outrank this document.
 2. Keep one deployable while the domain and team remain cohesive.
@@ -272,14 +335,21 @@ The first likely extraction, if a selected feature needs it, is an asynchronous 
 7. Add infrastructure for an approved feature, not a hypothetical future.
 8. Treat privacy, abuse handling, observability, and operational ownership as feature requirements.
 
-## 13. Verification baseline
+## 14. Verification baseline
 
-Verified locally on 2026-07-16 before this cleanup:
+Verified locally on 2026-07-20 after C4 implementation:
 
 ```text
 npm run lint       passed
 npm run typecheck  passed
-npm test           44 files, 231 tests passed
+npm test           54 files, 254 tests passed
+npm run build      passed (8 public routes prerendered; Account/Admin dynamic)
+npm run test:architecture  passed
+npm run test:e2e   6 passed, 1 fixture-backed test skipped
 ```
 
-The production build and the same static/unit checks must be rerun after this change. Live RLS, transactional, and browser suites require local/disposable Supabase and fixture infrastructure; their presence is not evidence that a target hosted environment has passed them.
+The latest Lighthouse baseline remains the 2026-07-18 C3 run: Home/About scored 94/100/100/100.
+
+The RLS and transactional suites could not run locally because Docker/Supabase was not active; both stopped before executing tests. GitHub Actions supplied the authoritative disposable-environment evidence for `main@0b11f58`, as linked in C1 above. The updated authenticated E2E focus step remains to be exercised with disposable fixtures.
+
+`npm audit --omit=dev` reported two moderate advisories in Next.js' nested PostCSS dependency. No force fix was applied because the proposed resolution would downgrade Next.js across incompatible major versions.

@@ -85,3 +85,9 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: placeholder-publishable-key
+
+      - name: Rendering architecture
+        run: npm run test:architecture
+
+      - name: Lighthouse budgets
+        run: npm run test:lighthouse

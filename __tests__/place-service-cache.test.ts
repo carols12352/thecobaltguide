@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { alignViewportToGrid, mapViewportFromQuery } from "@/lib/map/viewport-grid";
+import { ServerTiming } from "@/lib/api/server-timing";
 import type { MapPlace, PlaceDetail } from "@/types/domain";
 
 const cacheMocks = vi.hoisted(() => ({
@@ -274,5 +275,25 @@ describe("placeService cache integration", () => {
     );
 
     expect(cacheMocks.invalidatePlaceReadCaches).toHaveBeenCalledWith("place-1");
+  });
+
+  it("records Redis timing for cached search results", async () => {
+    cacheMocks.getCachedSearch.mockResolvedValue([sampleMapPlace]);
+    const timing = new ServerTiming();
+
+    await placeService.searchPlaces("cafe", 20, timing);
+
+    expect(timing.headerValue()).toMatch(/^redis;dur=/);
+    expect(repoMocks.search).not.toHaveBeenCalled();
+  });
+
+  it("records database and cache-write timing for search misses", async () => {
+    repoMocks.search.mockResolvedValue([sampleMapPlace]);
+    const timing = new ServerTiming();
+
+    await placeService.searchPlaces("cafe", 20, timing);
+
+    expect(timing.headerValue()).toMatch(/redis;dur=.*db;dur=.*redis-write;dur=/);
+    expect(cacheMocks.setCachedSearch).toHaveBeenCalledOnce();
   });
 });

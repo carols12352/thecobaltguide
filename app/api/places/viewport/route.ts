@@ -1,5 +1,5 @@
 import { CDN_CACHE_DURATIONS } from "@/config/constants";
-import { ServerTiming } from "@/lib/api/server-timing";
+import { ServerTiming, withServerTiming } from "@/lib/api/server-timing";
 import {
   jsonError,
   jsonPublicCached,
@@ -9,16 +9,6 @@ import {
 import { captureException } from "@/lib/monitoring/sentry";
 import { placeService } from "@/server/services/place-service";
 import { viewportDetailsQuerySchema } from "@/server/validation/schemas";
-
-function withServerTiming(
-  response: Response,
-  timing: ServerTiming,
-): Response {
-  const header = timing.headerValue();
-  if (!header) return response;
-  response.headers.set("Server-Timing", header);
-  return response;
-}
 
 export async function GET(request: Request) {
   const timing = new ServerTiming();

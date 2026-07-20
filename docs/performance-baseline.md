@@ -26,14 +26,19 @@ BASELINE_BASE_URL=https://preview.example.com npm run baseline:api
 ```
 
 The command prints JSON lines with full-response wall time for the first request,
-overall p50/p95, and warm p50/p95 for samples 2–N. It also records
-`Cache-Control`, first/last `x-vercel-cache` and `age` values, and first/last
-`Server-Timing` breakdowns. The first request is observational and is not
-guaranteed to be a cold cache hit. Save the output with the release evidence
-rather than committing environment-specific values. Use at least 20 samples and
-compare the same paths, region, database size, and cache state. A topology change
-requires evidence from this measurement plus the Sentry `map.query.duration_ms`
-and Redis hit/miss metrics.
+overall p50/p95, and warm p50/p95 for samples 2–N. It records `Cache-Control`
+plus first/last `x-vercel-cache` and `age` values for the normal CDN samples.
+After those samples, one separate origin probe sends `Pragma: no-cache` and
+`Cache-Control: no-cache`, recording its wall time, `x-vercel-cache`, and
+`Server-Timing` breakdown. Treat timing as origin evidence only when the probe is
+`MISS` or `REVALIDATED`; a normal `HIT` does not invoke the application.
+
+The first CDN request is observational and is not guaranteed to be a cold cache
+hit. Save the output with the release evidence rather than committing
+environment-specific values. Use at least 20 samples and compare the same paths,
+region, database size, and cache state. A topology change requires evidence from
+this measurement plus the Sentry `map.query.duration_ms` and Redis hit/miss
+metrics.
 
 ## GitHub Actions
 
@@ -45,6 +50,8 @@ dedicated workflow in either of these ways:
 - Open Actions → Performance baseline → Run workflow and enter the target URL.
 
 The longer `/performance-baseline` command remains available as an alias.
+The deployment and measurement command reference is also available in
+[`preview-deployment.md`](preview-deployment.md).
 
 PR-triggered runs reply with a result table and workflow link. Every run also
 writes the table to the job summary and retains the JSONL result as an artifact

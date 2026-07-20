@@ -261,12 +261,22 @@ export class PlaceService {
     return result;
   }
 
-  async searchPlaces(query: string, limit = 20) {
-    const cached = await getCachedSearch(query, limit);
+  async searchPlaces(query: string, limit = 20, timing?: ServerTiming) {
+    const cached = timing
+      ? await timing.measure("redis", () => getCachedSearch(query, limit))
+      : await getCachedSearch(query, limit);
     if (cached) return cached;
 
-    const places = await placeRepository.search(query, limit);
-    await setCachedSearch(query, limit, places);
+    const places = timing
+      ? await timing.measure("db", () => placeRepository.search(query, limit))
+      : await placeRepository.search(query, limit);
+    if (timing) {
+      await timing.measure("redis-write", () =>
+        setCachedSearch(query, limit, places),
+      );
+    } else {
+      await setCachedSearch(query, limit, places);
+    }
     return places;
   }
 
