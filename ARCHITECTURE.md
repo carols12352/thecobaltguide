@@ -24,7 +24,7 @@ One deployable application is the right topology for the current product, team, 
 | TypeScript/TSX | About 18.2k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Unit baseline | 53 files / 250 Vitest tests |
+| Unit baseline | 54 files / 254 Vitest tests |
 | Live database coverage | 16 RLS/grant tests and 3 transactional integration tests passed on `main@0b11f58` in GitHub Actions |
 | Browser coverage | Six fixture-free Playwright cases pass locally; the environment-backed critical path passed on `main@0b11f58` and now includes dialog focus verification when fixtures are present |
 | CI | Lint, typecheck, unit tests, build, live database suites, E2E, architecture assertions, Lighthouse budgets, and on-demand API performance baselines |
@@ -188,8 +188,8 @@ The production project also shows a real captured error and an Error Monitor wit
 ### Deployment topology
 
 - Vercel or another Node.js 22+ host runs the monolith.
-- GitHub Actions is the only automatic Vercel Preview path; native Vercel Git deployments are disabled.
-- `main` is the preview/development branch covered by the workflow.
+- GitHub Actions is the only Vercel Preview path; native Vercel Git deployments are disabled and pushes do not deploy automatically.
+- An authorized `/deploy` PR comment runs the workflow definition from `main` and deploys that PR's verified same-repository head SHA.
 - `release` is excluded and separately managed.
 
 The primary hosted database was inspected on 2026-07-14 for the RLS/grant hardening chain. That verification predates `20260715120000`; every target environment must apply the complete chain and run live tests before deployment.
@@ -281,9 +281,7 @@ Status: **complete in code as of 2026-07-20.**
 3. `summary-service.ts` now contains only aggregation orchestration; source reads and summary upserts are owned by `summary-repository.ts`.
 4. Projection contract tests cover viewport/map, detail, admin relation, and aggregation input shapes while compatibility exports remain available to existing services.
 
-Exit criteria: **met in code.** Typecheck, lint, the production build, and all 53 unit-test files (250 tests) pass locally.
-
-Exit criteria: dependencies remain route → service → repository, moved behavior has tests, and no compatibility layer is removed without verified callers.
+Exit criteria: **met in code.** Typecheck, lint, the production build, and all 54 unit-test files (254 tests) pass locally.
 
 ### C5 — expose existing non-point merchant data
 
@@ -334,7 +332,7 @@ Verified locally on 2026-07-20 after C4 implementation:
 ```text
 npm run lint       passed
 npm run typecheck  passed
-npm test           53 files, 250 tests passed
+npm test           54 files, 254 tests passed
 npm run build      passed (8 public routes prerendered; Account/Admin dynamic)
 npm run test:architecture  passed
 npm run test:e2e   6 passed, 1 fixture-backed test skipped

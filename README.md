@@ -204,10 +204,14 @@ Within large feature areas, keep API-facing models and reusable presentation com
 
 The repository targets Vercel or another Node.js 22+ host.
 
-- `.github/workflows/vercel-deploy.yml` creates Vercel Preview deployments for `main` according to the workflow triggers.
-- `vercel.json` disables Vercel native Git deployments so GitHub Actions is the automatic preview path.
+- Comment `/deploy` on an open same-repository PR to create a new Vercel Preview for its current head SHA. Only owners, members, and collaborators may trigger it.
+- Deployments are comment-only: pushes and PR creation do not deploy automatically, and `/deploy` currently accepts no parameters.
+- The workflow posts a start notice and updates it with the Preview URL or failure link when the run finishes.
+- `vercel.json` disables Vercel native Git deployments so GitHub Actions remains the only Preview path.
 - `release` is excluded from that workflow and remains separately managed.
 - Production needs migrated Supabase schema, production Auth URLs/email delivery, Redis write/read credentials, and Sentry alert configuration.
+
+See [Preview deployment operations](docs/preview-deployment.md) for command parameters, permissions, required secrets, performance measurement, and troubleshooting.
 
 Before production deployment, apply every migration through `20260717130000`, run the live database suites in a disposable environment, and verify the map/geocoding critical path. The primary hosted verification recorded on 2026-07-14 predates the transactional and privacy migrations and is not sufficient evidence for a new environment.
 
@@ -217,7 +221,7 @@ Before production deployment, apply every migration through `20260717130000`, ru
 - Mutations bump cache versions after committed database work.
 - Without Redis, reads fall back to Supabase and rate limits are process-local.
 - The reviewed Rewards Canada seed is installed only through the explicit replacement script. See [supabase/scripts/README.md](supabase/scripts/README.md).
-- Repeatable performance measurements are documented in [docs/performance-baseline.md](docs/performance-baseline.md).
+- Repeatable performance measurements and the separate CDN/origin interpretation are documented in [docs/performance-baseline.md](docs/performance-baseline.md).
 
 ## Stage C production readiness
 
@@ -239,7 +243,7 @@ Stage A and Stage B are retained as immutable project-history milestones:
 | Stage A | Release safety: RLS/grants, transactional writes, observability, geocoding protection | `0ffe352` |
 | Stage B | Maintainability: service/repository splits, stable mutation errors, integration/E2E coverage, performance baseline | `ac122ab` |
 
-Do not amend, squash, or relabel these legacy commits. The next planned work is Stage C4: reduce measured code hotspots, then select one bounded product feature. The ordered plan and acceptance criteria live in [ARCHITECTURE.md](ARCHITECTURE.md#10-next-step-plan-stage-c).
+Do not amend, squash, or relabel these legacy commits. Stage C4 is complete; the next planned work is the bounded Stage C5 non-point merchant read surface. The ordered plan and acceptance criteria live in [ARCHITECTURE.md](ARCHITECTURE.md#10-next-step-plan-stage-c).
 
 ## Data attribution
 
