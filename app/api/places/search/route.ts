@@ -1,4 +1,5 @@
 import { CDN_CACHE_DURATIONS } from "@/config/constants";
+import { ServerTiming, withServerTiming } from "@/lib/api/server-timing";
 import {
   jsonError,
   jsonPublicCached,
@@ -10,6 +11,8 @@ import { placeService } from "@/server/services/place-service";
 import { searchQuerySchema } from "@/server/validation/schemas";
 
 export async function GET(request: Request) {
+  const timing = new ServerTiming();
+
   try {
     const { searchParams } = new URL(request.url);
     const parsed = searchQuerySchema.safeParse(
@@ -23,11 +26,15 @@ export async function GET(request: Request) {
     const places = await placeService.searchPlaces(
       parsed.data.q,
       parsed.data.limit,
+      timing,
     );
 
-    return jsonPublicCached(
-      { places },
-      publicCdnCacheControl(CDN_CACHE_DURATIONS.searchSeconds),
+    return withServerTiming(
+      jsonPublicCached(
+        { places },
+        publicCdnCacheControl(CDN_CACHE_DURATIONS.searchSeconds),
+      ),
+      timing,
     );
   } catch (error) {
     captureException(error, { route: "GET /api/places/search" });
