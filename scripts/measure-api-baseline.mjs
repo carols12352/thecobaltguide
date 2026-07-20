@@ -64,6 +64,11 @@ function vercelBypassHeaders(url) {
 }
 
 const requestHeaders = vercelBypassHeaders(validatedBaseUrl);
+const originProbeHeaders = {
+  ...requestHeaders,
+  "cache-control": "no-cache",
+  pragma: "no-cache",
+};
 
 const samples = Number(process.env.BASELINE_SAMPLES ?? 20);
 if (!Number.isInteger(samples) || samples < 5 || samples > 100) {
@@ -99,6 +104,19 @@ for (const path of paths) {
   const warmDurations = durations.slice(1);
   const first = observations[0];
   const last = observations.at(-1);
+
+  const originStartedAt = performance.now();
+  const originResponse = await fetch(new URL(path, validatedBaseUrl), {
+    cache: "no-store",
+    headers: originProbeHeaders,
+    redirect: "error",
+  });
+  if (!originResponse.ok) {
+    throw new Error(`${path} origin probe returned HTTP ${originResponse.status}`);
+  }
+  await originResponse.arrayBuffer();
+  const originProbeMs = performance.now() - originStartedAt;
+
   console.log(JSON.stringify({
     path,
     samples,
@@ -114,5 +132,8 @@ for (const path of paths) {
     lastAgeSeconds: last?.ageSeconds ?? null,
     firstServerTiming: first?.serverTiming ?? null,
     lastServerTiming: last?.serverTiming ?? null,
+    originProbeMs: Math.round(originProbeMs),
+    originCacheStatus: originResponse.headers.get("x-vercel-cache"),
+    originServerTiming: originResponse.headers.get("server-timing"),
   }));
 }
