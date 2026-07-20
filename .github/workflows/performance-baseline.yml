@@ -52,6 +52,7 @@ jobs:
         run: node scripts/resolve-baseline-request.mjs --github-output "$GITHUB_OUTPUT"
 
       - name: Reply that performance baseline started
+        id: status_comment
         if: ${{ github.event_name == 'issue_comment' && steps.request.outcome == 'success' }}
         uses: actions/github-script@v9
         env:
@@ -69,12 +70,15 @@ jobs:
               '',
               `[Follow the workflow run](${runUrl})`,
             ].join('\n');
-            await github.rest.issues.createComment({
+
+            const response = await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body,
             });
+
+            core.setOutput('comment_id', String(response.data.id));
 
       - name: Install dependencies
         run: npm ci
@@ -99,25 +103,37 @@ jobs:
           BASELINE_URL: ${{ steps.request.outputs.base_url }}
         run: node scripts/report-performance-baseline.mjs --github-summary "$GITHUB_STEP_SUMMARY"
 
-      - name: Reply with performance baseline result
-        if: ${{ always() && github.event_name == 'issue_comment' && steps.request.outcome == 'success' }}
+      - name: Update performance baseline comment
+        if: >-
+          ${{
+            always() &&
+            github.event_name == 'issue_comment' &&
+            steps.request.outcome == 'success' &&
+            steps.status_comment.outcome == 'success'
+          }}
         uses: actions/github-script@v9
         env:
           BASELINE_OUTCOME: ${{ steps.baseline.outcome }}
           BASELINE_URL: ${{ steps.request.outputs.base_url }}
+          BASELINE_COMMENT_ID: ${{ steps.status_comment.outputs.comment_id }}
         with:
           github-token: ${{ github.token }}
           script: |
             const { execFileSync } = require('node:child_process');
+
             const body = execFileSync(
               'node',
               ['scripts/report-performance-baseline.mjs'],
-              { encoding: 'utf8', env: process.env },
+              {
+                encoding: 'utf8',
+                env: process.env,
+              },
             );
-            await github.rest.issues.createComment({
+
+            await github.rest.issues.updateComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              comment_id: Number(process.env.BASELINE_COMMENT_ID),
               body,
             });
 
