@@ -83,12 +83,12 @@ export function MapPreview() {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting && entry.intersectionRatio >= 0.25) {
+        if (entry?.isIntersecting) {
           observer.disconnect();
           void loadMap();
         }
       },
-      { threshold: [0.25] },
+      { threshold: [0] },
     );
 
     observer.observe(preview);

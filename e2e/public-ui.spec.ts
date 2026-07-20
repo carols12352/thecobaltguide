@@ -20,6 +20,8 @@ test("home remains usable on a narrow viewport without horizontal overflow", asy
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Cobalt card goes further/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore the map", exact: true }).first()).toHaveAttribute("href", "/map");
+  await expect(page.getByText("Community-reported merchant multipliers across Canada, with recency and confidence context.")).toHaveCount(0);
 
   const mapPreview = page.locator('[data-map-preview-state]');
   await expect(mapPreview).toHaveAttribute("data-map-preview-state", "deferred");
@@ -35,10 +37,10 @@ test("home remains usable on a narrow viewport without horizontal overflow", asy
     scrollWidth: document.documentElement.scrollWidth,
   }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
-  await expect(page.getByTestId("hero-map-illustration")).toBeHidden();
+  await expect(page.getByTestId("hero-map-illustration")).toBeVisible();
 });
 
-test("desktop home uses three viewport sections and a static hero map", async ({
+test("desktop home uses two full visual sections and a compact detail section", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -49,7 +51,9 @@ test("desktop home uses three viewport sections and a static hero map", async ({
     (sections) => sections.map((section) => section.getBoundingClientRect().height),
   );
   expect(sectionHeights).toHaveLength(3);
-  for (const height of sectionHeights) expect(height).toBeGreaterThanOrEqual(736);
+  expect(sectionHeights[0]).toBeGreaterThanOrEqual(736);
+  expect(sectionHeights[1]).toBeGreaterThanOrEqual(736);
+  expect(sectionHeights[2]).toBeGreaterThanOrEqual(420);
 });
 
 test("reduced-motion preference suppresses decorative entrance motion", async ({ page }) => {

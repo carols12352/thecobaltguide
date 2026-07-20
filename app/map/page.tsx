@@ -151,14 +151,10 @@ export default function MapPage() {
 
   return (
     <section aria-labelledby="map-heading" className="flex min-h-[calc(100svh-4rem)] flex-col bg-white dark:bg-zinc-950">
-      <div className="border-b border-zinc-200 bg-zinc-50/80 px-4 py-5 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="border-b border-zinc-200 bg-zinc-50/80 px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-semibold tracking-[0.14em] text-cobalt-700 uppercase dark:text-cobalt-300">Live guide</p>
-            <h1 id="map-heading" className="mt-1 text-2xl font-semibold tracking-tight">Find rewarding places near you</h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Community-sourced Amex Cobalt multiplier data across Canada.
-            </p>
+            <h1 id="map-heading" className="text-xl font-semibold tracking-tight sm:text-2xl">Explore merchants</h1>
           </div>
           <form onSubmit={handleSearch} role="search" className="flex w-full gap-2 sm:w-auto">
             <Input
@@ -181,7 +177,7 @@ export default function MapPage() {
         {searchError && (
           <p role="alert" className="mx-auto mt-2 max-w-7xl text-sm text-red-600">{searchError}</p>
         )}
-        <div className="mx-auto mt-4 max-w-7xl">
+        <div className="mx-auto mt-3 max-w-7xl">
           <MapFiltersBar filters={filters} onChange={setFilters} />
         </div>
       </div>
@@ -260,31 +256,30 @@ export default function MapPage() {
             {!isSearchMode && mapInViewEnabled && listTruncated ? (
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 {viewportCount != null && viewportCount > listPlaces.length
-                  ? `${viewportCount.toLocaleString()} merchants in this view. Showing ${listPlaces.length}. Zoom in for full results.`
-                  : "Showing a limited set of merchants in this area. Zoom in for full results."}
+                  ? `${viewportCount.toLocaleString()} here. Showing ${listPlaces.length}; zoom in for all.`
+                  : "Zoom in for all results."}
               </p>
             ) : null}
             {!isSearchMode && outOfArea ? (
               <p className="text-sm text-zinc-500">
-                Merchant data covers Canada. Pan the map back to see merchants.
+                Canada only. Pan back to see merchants.
               </p>
             ) : null}
             {!isSearchMode && !mapInViewEnabled && !outOfArea && citySummary ? (
               <p className="text-sm text-zinc-500">
-                {citySummary.count.toLocaleString()} merchants in this view.
-                Zoom in to browse the list.
+                {citySummary.count.toLocaleString()} merchants. Zoom in to browse.
               </p>
             ) : null}
             {!isSearchMode && !mapInViewEnabled && !outOfArea && !citySummary ? (
               <p className="text-sm text-zinc-500">
-                Zoom in on the map to browse merchants in this area.
+                Zoom in to browse merchants.
               </p>
             ) : null}
             {listPlaces.length === 0 && (isSearchMode || mapInViewEnabled) && (
               <p className="text-sm text-zinc-500">
                 {isSearchMode
                   ? "No merchants match your search."
-                  : "Move the map or adjust filters to see merchants."}
+                  : "Move the map or adjust filters."}
               </p>
             )}
           </div>

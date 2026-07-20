@@ -38,7 +38,7 @@ export function HeroMapIllustration() {
     <div
       data-testid="hero-map-illustration"
       aria-hidden="true"
-      className="relative h-full min-h-[36rem] overflow-hidden bg-[#f4f1ea]"
+      className="relative h-full min-h-[22rem] overflow-hidden bg-[#f4f1ea] lg:min-h-[36rem]"
     >
       <svg
         viewBox="0 0 100 100"

@@ -223,19 +223,19 @@ export function SubmitReportPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Add a New Merchant</h1>
+        <h1 className="text-2xl font-bold">Add a merchant</h1>
         <p className="mt-1 text-zinc-600">
-          Can&apos;t find a merchant on the{" "}
+          Not on the{" "}
           <Link href="/map" className="font-medium text-cobalt-600 hover:underline">
             map
           </Link>
-          ? Add it here, then submit a multiplier report on its detail page.
+          ? Add it here.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <h2 className="font-semibold">New Place Details</h2>
+          <h2 className="font-semibold">Place details</h2>
         </CardHeader>
         <CardContent className="space-y-6">
           <form onSubmit={handleLookupLocation} className="space-y-3">
@@ -306,8 +306,7 @@ export function SubmitReportPage() {
                 aria-describedby="place-postal-hint"
               />
               <p id="place-postal-hint" className="text-xs text-zinc-500">
-                Only postal code is required for lookup. Address, city, and
-                province fill in from the result.
+                Postal code is enough to search.
               </p>
             </div>
             <div className="space-y-1">
@@ -337,7 +336,7 @@ export function SubmitReportPage() {
           {geocodeResults.length > 1 && (
             <div className="space-y-2">
               <p className="text-sm font-medium text-zinc-700">
-                Multiple matches found — pick the correct one:
+                Choose a match:
               </p>
               <div className="space-y-2">
                 {geocodeResults.map((result) => (

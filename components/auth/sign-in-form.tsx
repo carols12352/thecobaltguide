@@ -186,7 +186,7 @@ export function SignInForm() {
     <>
       <AuthShell
         title="Welcome back"
-        subtitle="Sign in to submit multiplier reports and track your contributions."
+        subtitle="Sign in to contribute."
         footer={
           <>
             New here?{" "}
@@ -279,8 +279,7 @@ export function SignInForm() {
         ) : (
           <div className="mt-4 space-y-4">
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              We&apos;ll email you a secure one-time sign-in link. You can only
-              request one every {AUTH_EMAIL_COOLDOWN_SECONDS} seconds.
+              We&apos;ll email a one-time sign-in link. Resend after {AUTH_EMAIL_COOLDOWN_SECONDS} seconds.
             </p>
 
             {error && <AuthError message={error} />}

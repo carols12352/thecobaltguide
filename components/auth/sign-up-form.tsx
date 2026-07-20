@@ -98,7 +98,7 @@ export function SignUpForm() {
     <>
       <AuthShell
         title="Create your account"
-        subtitle="Join the community map and help Cobalt cardholders find 5x merchants."
+        subtitle="Create an account to contribute."
         footer={
           <>
             Already have an account?{" "}
@@ -194,9 +194,7 @@ export function SignUpForm() {
         </form>
 
         <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-          By creating an account, you agree to contribute accurate, good-faith
-          multiplier reports. If you later sign in with Google using the same
-          email, Supabase will link it to this account automatically.
+          Submit accurate, good-faith reports. Google sign-in with the same email links automatically.
         </p>
       </AuthShell>
 
