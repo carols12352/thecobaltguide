@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture
 
-> Last reviewed: 2026-07-18 on the Stage C branch after the C3 rendering/observability implementation.
+> Last reviewed: 2026-07-20 on the Stage C branch after the C4 hotspot reduction.
 >
 > Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, known gaps, and the next planned milestone.
 
@@ -24,7 +24,7 @@ One deployable application is the right topology for the current product, team, 
 | TypeScript/TSX | About 18.2k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Unit baseline | 51 files / 245 Vitest tests |
+| Unit baseline | 53 files / 250 Vitest tests |
 | Live database coverage | 16 RLS/grant tests and 3 transactional integration tests passed on `main@0b11f58` in GitHub Actions |
 | Browser coverage | Six fixture-free Playwright cases pass locally; the environment-backed critical path passed on `main@0b11f58` and now includes dialog focus verification when fixtures are present |
 | CI | Lint, typecheck, unit tests, build, live database suites, E2E, architecture assertions, Lighthouse budgets, and on-demand API performance baselines |
@@ -274,10 +274,14 @@ Exit criteria: **met in code.** The latest local production run scored both Home
 
 ### C4 — reduce measured code hotspots
 
-1. Continue splitting `components/admin/admin-dashboard.tsx` by tab as each tab is changed; API models and reusable presentation pieces are already separated.
-2. Split the 700+ line `place-repository.ts` read facade into public-map, public-detail/search, and admin query owners without duplicating query logic.
-3. Move the remaining direct database access in `summary-service.ts` behind a repository boundary.
-4. Add contract tests around each moved projection before removing compatibility exports.
+Status: **complete in code as of 2026-07-20.**
+
+1. `components/admin/admin-dashboard.tsx` now owns shared state and API orchestration while overview, reports, flags, places, and users render through tab-specific components in `components/admin/tabs/`.
+2. The former 700+ line `place-repository.ts` is a compatibility facade. Public map reads, public detail/search reads, admin queries, card lookup, and shared projections have distinct repository owners without duplicated projection logic.
+3. `summary-service.ts` now contains only aggregation orchestration; source reads and summary upserts are owned by `summary-repository.ts`.
+4. Projection contract tests cover viewport/map, detail, admin relation, and aggregation input shapes while compatibility exports remain available to existing services.
+
+Exit criteria: **met in code.** Typecheck, lint, the production build, and all 53 unit-test files (250 tests) pass locally.
 
 Exit criteria: dependencies remain route → service → repository, moved behavior has tests, and no compatibility layer is removed without verified callers.
 
@@ -325,17 +329,18 @@ The first likely extraction, if a selected feature needs it, is an asynchronous 
 
 ## 13. Verification baseline
 
-Verified locally on 2026-07-18 after C3 implementation:
+Verified locally on 2026-07-20 after C4 implementation:
 
 ```text
 npm run lint       passed
 npm run typecheck  passed
-npm test           51 files, 245 tests passed
+npm test           53 files, 250 tests passed
 npm run build      passed (8 public routes prerendered; Account/Admin dynamic)
 npm run test:architecture  passed
 npm run test:e2e   6 passed, 1 fixture-backed test skipped
-npm run test:lighthouse    passed (Home and About 94/100/100/100)
 ```
+
+The latest Lighthouse baseline remains the 2026-07-18 C3 run: Home/About scored 94/100/100/100.
 
 The RLS and transactional suites could not run locally because Docker/Supabase was not active; both stopped before executing tests. GitHub Actions supplied the authoritative disposable-environment evidence for `main@0b11f58`, as linked in C1 above. The updated authenticated E2E focus step remains to be exercised with disposable fixtures.
 
