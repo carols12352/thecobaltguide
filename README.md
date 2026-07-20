@@ -11,11 +11,11 @@ Users can browse and filter merchants, submit locations and multiplier reports, 
 - Runtime: Next.js 16 App Router, React 19, and Node.js 22+.
 - Data: Supabase PostgreSQL/PostGIS with Row Level Security.
 - Optional infrastructure: Upstash Redis and Sentry.
-- Quality baseline: 51 Vitest files / 245 tests, plus live Supabase, Playwright, architecture, and Lighthouse suites.
+- Quality baseline: 54 Vitest files / 254 tests, plus live Supabase, Playwright, architecture, and Lighthouse suites.
 - Architecture: modular monolith using route → service → repository boundaries.
-- Current milestone: Stage A and Stage B are preserved legacy milestones; Stage C1–C3 are implemented, with C4 next.
+- Current milestone: Stage A and Stage B are preserved legacy milestones; Stage C (C1-C4) is complete.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries, operational readiness, legacy milestones, and the next-step plan.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries, operational readiness, completed milestones, release gates, and deferred opportunities.
 
 ## Product capabilities
 
@@ -223,7 +223,7 @@ Before production deployment, apply every migration through `20260717130000`, ru
 - The reviewed Rewards Canada seed is installed only through the explicit replacement script. See [supabase/scripts/README.md](supabase/scripts/README.md).
 - Repeatable performance measurements and the separate CDN/origin interpretation are documented in [docs/performance-baseline.md](docs/performance-baseline.md).
 
-## Stage C production readiness
+## Stage C completion
 
 - Anonymous email/provider lookup has been removed. Sign-in guidance uses only a browser-local `lastUsed` method marker; no email address or account-existence state is sent to the application.
 - A report-only Content Security Policy and `nosniff`, referrer, frame, permissions, and production transport headers are configured in `next.config.ts`. Review CSP reports against deployed Supabase, map, OAuth, and Sentry traffic before enforcing it.
@@ -234,7 +234,7 @@ Before production deployment, apply every migration through `20260717130000`, ru
 - Robots/sitemap routes, a social preview image, private-route `noindex`, dynamic place metadata, safe error/404 UI, focus trapping/restoration, reduced-motion behavior, and narrow-viewport checks are included.
 - The home page is organized into three viewport-height sections: a full-height Hero with a server-rendered static map on desktop, the real interactive map, then product context and contribution actions. MapLibre loads automatically once at least 25% of the second section enters the viewport. The latest local Lighthouse run scored both Home and About 94/100/100/100 for performance/accessibility/best-practices/SEO.
 
-## Legacy milestones and next work
+## Completed milestones and deferred work
 
 Stage A and Stage B are retained as immutable project-history milestones:
 
@@ -243,7 +243,9 @@ Stage A and Stage B are retained as immutable project-history milestones:
 | Stage A | Release safety: RLS/grants, transactional writes, observability, geocoding protection | `0ffe352` |
 | Stage B | Maintainability: service/repository splits, stable mutation errors, integration/E2E coverage, performance baseline | `ac122ab` |
 
-Do not amend, squash, or relabel these legacy commits. Stage C4 is complete; the next planned work is the bounded Stage C5 non-point merchant read surface. The ordered plan and acceptance criteria live in [ARCHITECTURE.md](ARCHITECTURE.md#10-next-step-plan-stage-c).
+Do not amend, squash, or relabel these legacy commits. Stage C (C1-C4) is complete. Its implementation record is in [Completed milestone: Stage C](ARCHITECTURE.md#10-completed-milestone-stage-c), while deployment sign-off is tracked separately in the [pre-production release checklist](ARCHITECTURE.md#pre-production-release-checklist).
+
+The database already contains non-point merchant coverage and online-merchant tables, but exposing them is not currently planned and is not part of Stage C. The opportunity is retained as deferred product context in [ARCHITECTURE.md](ARCHITECTURE.md#11-deferred-product-opportunity-non-point-merchant-data).
 
 ## Data attribution
 

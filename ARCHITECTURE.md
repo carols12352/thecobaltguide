@@ -1,8 +1,8 @@
 # Cobalt Merchant Map — Architecture
 
-> Last reviewed: 2026-07-20 on the Stage C branch after the C4 hotspot reduction.
+> Last reviewed: 2026-07-20 after completion of Stage C (C1-C4).
 >
-> Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, known gaps, and the next planned milestone.
+> Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, release gates, and deferred product opportunities.
 
 ## 1. Architecture decision
 
@@ -178,12 +178,20 @@ The Sentry deployment credentials, Next.js server SDK, and request-error instrum
 
 The production project also shows a real captured error and an Error Monitor with an active alert rule, completing the C1 ingestion/alert evidence. Readable TypeScript source maps and release-to-commit correlation should still be spot-checked when investigating an error, but they no longer block C1 acceptance. Session Replay is not required; if introduced later, sensitive account, address, and report fields must be masked by default.
 
-### Known production-readiness gaps
+### Pre-production release checklist
 
-- A report-only provider-compatible Content Security Policy, `nosniff`, strict referrer, frame, permissions, and production transport headers are configured. Enforce the CSP only after production report review confirms every Supabase, map, OAuth, and Sentry origin.
-- Browser Sentry ingestion, readable client source maps, and navigation traces require a deployed operator spot-check.
-- The fixture-backed sign-in/mutation/focus E2E step must run in CI or a disposable environment; fixture-free browser checks do not prove authenticated Supabase behavior.
-- The dependency audit reports two moderate advisories through Next.js' nested PostCSS version. A force fix would introduce an invalid major downgrade; upgrade only through a verified Next.js release containing the corrected dependency.
+Stage C is complete in code. The following are operational release gates, not unfinished Stage C feature work:
+
+- [ ] Confirm the release commit passes lint, typecheck, unit tests, production build, architecture assertions, Lighthouse budgets, live RLS/integration suites, and the fixture-backed E2E workflow. Treat an isolated Lighthouse failure as a signal to rerun and investigate, not as permission to lower the budget.
+- [ ] Apply every migration through `20260717130000` to the intended Supabase project and record the migration status. The 2026-07-14 hosted verification predates the transactional and privacy migrations.
+- [ ] Create a Vercel Preview with `/deploy`, run `/performance <preview_url> 30`, and retain the workflow links. Check CDN warm latency separately from the origin probe and inspect `Server-Timing` for Redis/database regressions.
+- [ ] Smoke-test sign-in, map/search, geocoding, report submission/removal, moderation, account export/deletion, and mutation-driven cache invalidation against disposable fixtures or the intended environment.
+- [ ] Verify Redis-backed cache and distributed rate limiting, then exercise the documented direct-database and in-memory fallback behavior without exposing credentials.
+- [ ] Verify a sanitized browser error and navigation trace in deployed Sentry, confirm the alert owner, and spot-check source-map readability and release-to-commit correlation.
+- [ ] Review report-only CSP findings for Supabase, OpenFreeMap/Mapbox, Google OAuth, Nominatim, and Sentry before deciding whether to enforce the policy.
+- [ ] Record the production commit SHA, migration state, CI/deployment evidence, smoke result, operator, and rollback target in the release record.
+
+The dependency audit currently reports two moderate advisories through Next.js' nested PostCSS version. A force fix would introduce an invalid major downgrade; upgrade only through a verified Next.js release containing the corrected dependency.
 
 ### Deployment topology
 
@@ -224,9 +232,9 @@ The documentation commit `75133ef` remains part of the same legacy history.
 
 These labels describe completed history only. New work must use a new milestone name.
 
-## 10. Next-step plan: Stage C
+## 10. Completed milestone: Stage C
 
-Stage C is intentionally ordered. Redis and Sentry configuration is recorded as current infrastructure state, not as a rewrite of the completed Stage A or Stage B history. Finish operational evidence, security boundaries, and measured runtime work before broadening product scope.
+Stage C was completed on 2026-07-20 through C1-C4. Redis and Sentry configuration is recorded as current infrastructure state, not as a rewrite of the completed Stage A or Stage B history. Remaining deployment checks are tracked by the pre-production release checklist rather than by extending the milestone.
 
 ### C1 — close release evidence
 
@@ -251,7 +259,7 @@ Recorded C1 evidence:
 
 ### C2 — close security and privacy gaps
 
-Status: **complete in code; live database/browser verification remains required before release.**
+Status: **complete in code.** Live database/browser verification remains a pre-production release gate.
 
 1. Anonymous account-existence/provider disclosure is removed. The sign-in form uses a device-local `lastUsed` marker that stores only `google`, `password`, or `magic_link`.
 2. `next.config.ts` applies report-only CSP plus `nosniff`, referrer, permissions, frame, and production HSTS headers. The CSP permits configured Supabase, map, Mapbox, Nominatim, Google OAuth, and Sentry transport; deploy it in report-only mode before enforcement.
@@ -262,7 +270,7 @@ Exit criteria: **met in code.** The test suite covers local last-used state, hea
 
 ### C3 — improve rendering, browser observability, and discovery
 
-Status: **complete in code as of 2026-07-18; deployed browser-Sentry ingestion and the updated fixture-backed E2E remain release checks.**
+Status: **complete in code as of 2026-07-18.** Deployed browser-Sentry ingestion and the updated fixture-backed E2E remain pre-production release gates.
 
 1. `instrumentation-client.ts` captures browser errors and navigation spans in production with sampled tracing, no default PII, and explicit event sanitization.
 2. The shared header no longer performs an auth/profile read. Anonymous proxy requests without a Supabase auth cookie also avoid session verification, and the production build prerenders eight intended public routes.
@@ -283,11 +291,13 @@ Status: **complete in code as of 2026-07-20.**
 
 Exit criteria: **met in code.** Typecheck, lint, the production build, and all 54 unit-test files (254 tests) pass locally.
 
-### C5 — expose existing non-point merchant data
+Stage C exit criteria are met. New product scope must be selected independently rather than appended to this completed milestone.
 
-The preferred first bounded product feature is a public read surface for the existing `merchant_multiplier_coverages` and `online_merchant_multipliers` tables. The UI must distinguish physical places, city/province/nationwide coverage, and online-only merchants without inventing map coordinates.
+## 11. Deferred product opportunity: non-point merchant data
 
-Implement this feature only after C1 is closed and the relevant C2/C3 safeguards are in place. Before implementation, document:
+The schema already contains `merchant_multiplier_coverages` and `online_merchant_multipliers`. They could support a future public read surface that distinguishes physical places, city/province/nationwide coverage, and online-only merchants without inventing map coordinates.
+
+This is not Stage C, is not currently planned, and carries no delivery commitment. If it is selected later, define a fresh milestone and document:
 
 - owner and authorization rules;
 - data/migration and rollback behavior;
@@ -297,11 +307,11 @@ Implement this feature only after C1 is closed and the relevant C2/C3 safeguards
 - unit, integration, and E2E coverage;
 - observable failures and ongoing provider/moderation cost.
 
-Acceptance criteria: bounded indexed queries, cache keys and invalidation rules, explicit source attribution, search/filter integration, responsive and accessible presentation, and unit/API/E2E coverage for each merchant scope.
+Likely acceptance criteria would include bounded indexed queries, cache keys and invalidation rules, explicit source attribution, search/filter integration, responsive and accessible presentation, and unit/API/E2E coverage for each merchant scope.
 
 After this feature is measured, candidates such as shareable map-filter URLs, device-location sorting, saved merchants, or change notifications may be selected independently. Do not pre-build generic queues, microservices, search clusters, notification workers, or multi-card UI without an approved use case.
 
-## 11. Extraction and scaling triggers
+## 12. Extraction and scaling triggers
 
 Continue scaling through bounded queries, indexes, cache, and horizontal Next.js instances. Consider a worker or separate service only when production evidence shows at least one of these:
 
@@ -314,7 +324,7 @@ Continue scaling through bounded queries, indexes, cache, and horizontal Next.js
 
 The first likely extraction, if a selected feature needs it, is an asynchronous import/notification worker—not separate place, report, user, and moderation services that currently share transactions.
 
-## 12. Architecture principles
+## 13. Architecture principles
 
 1. Code and migrations outrank this document.
 2. Keep one deployable while the domain and team remain cohesive.
@@ -325,7 +335,7 @@ The first likely extraction, if a selected feature needs it, is an asynchronous 
 7. Add infrastructure for an approved feature, not a hypothetical future.
 8. Treat privacy, abuse handling, observability, and operational ownership as feature requirements.
 
-## 13. Verification baseline
+## 14. Verification baseline
 
 Verified locally on 2026-07-20 after C4 implementation:
 
