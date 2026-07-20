@@ -3,19 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AdminHintsCard,
   AdminShell,
-  AdminUserCard,
-  EmptyState,
-  StatCard,
 } from "@/components/admin/admin-dashboard-parts";
 import {
   ADMIN_TABS,
-  PAYMENT_CONTEXT_LABELS,
   adminTabIndexForKey,
-  formatAdminDate,
-  placeStatusVariant,
-  reportStatusVariant,
   type AdminPlace,
   type AdminReport,
   type AdminSession,
@@ -23,23 +15,18 @@ import {
   type AdminUser,
   type AdminUserUpdate,
 } from "@/components/admin/admin-dashboard-model";
-import { PlacesPagination, PLACES_PAGE_SIZE } from "@/components/admin/places-pagination";
+import { FlagsTab } from "@/components/admin/tabs/flags-tab";
+import { OverviewTab } from "@/components/admin/tabs/overview-tab";
+import { PlacesTab } from "@/components/admin/tabs/places-tab";
+import { ReportsTab } from "@/components/admin/tabs/reports-tab";
+import { UsersTab } from "@/components/admin/tabs/users-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
-import { getCategoryLabel } from "@/config/categories";
-import { REPORT_KIND_LABELS } from "@/lib/reports/report-kind";
 import {
   buildAdminPlacesSearchParams,
   parsePlaceSearchInput,
   type PlaceSearchCriteria,
 } from "@/lib/admin/place-search";
-import { formatAdminFlagGroupHeadline } from "@/lib/flags/admin-flag-groups";
-import { FLAG_REASON_LABELS } from "@/lib/flags/user-flag-state";
-import { formatCanadianPostalCodeInput } from "@/lib/validation/canadian-postal-code";
 import type { AdminFlagGroup } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
@@ -530,543 +517,47 @@ export function AdminDashboard({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-4">
-        {tab === "overview" ? (
-          <div
-            id="admin-panel-overview"
-            role="tabpanel"
-            aria-labelledby="admin-tab-overview"
-            className="space-y-5"
-          >
-            <section aria-labelledby="queue-summary-heading">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 id="queue-summary-heading" className="text-sm font-semibold">Queue summary</h2>
-                <p className="text-xs text-zinc-500">Current workspace</p>
-              </div>
-              <dl className={cn("grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-800", isAdmin ? "sm:grid-cols-5" : "sm:grid-cols-4")}>
-                <StatCard label="Open flags" value={stats.openFlags} />
-                <StatCard label="Review queue" value={stats.activeReports} />
-                <StatCard label="Flagged" value={stats.flaggedReports} />
-                <StatCard label="Places" value={stats.activePlaces} />
-                {isAdmin ? <StatCard label="Users" value={stats.users} className="col-span-2 sm:col-span-1" /> : null}
-              </dl>
-            </section>
-            {(!hintsDismissed || hintsExpanded) && session ? (
-              <AdminHintsCard
-                isAdmin={isAdmin}
-                onDismiss={dismissAdminHints}
-              />
-            ) : null}
-          </div>
-      ) : null}
-
-      {tab === "reports" ? (
-        <section
-          id="admin-panel-reports"
-          role="tabpanel"
-          aria-labelledby="admin-tab-reports"
-          className="space-y-3"
-        >
-          {reports.map((report) => (
-            <Card key={report.id} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
-              <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">
-                      {report.places?.name ?? "Unknown place"}
-                    </p>
-                    <Badge variant={reportStatusVariant(report.status)}>
-                      {report.status}
-                    </Badge>
-                    <Badge variant="muted">
-                      {REPORT_KIND_LABELS[report.report_kind]}
-                    </Badge>
-                    <Badge variant="default">{report.multiplier}x</Badge>
-                  </div>
-                  <p className="text-sm text-zinc-600">
-                    {report.places?.city}, {report.places?.province} ·{" "}
-                    {PAYMENT_CONTEXT_LABELS[report.payment_context] ??
-                      report.payment_context}
-                    {" · "}
-                    {formatAdminDate(report.transaction_date)}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    Reporter: {report.reporter?.username ?? "unknown"}
-                    {report.reporter?.id ? (
-                      <>
-                        {" · "}
-                        <span className="font-mono">{report.reporter.id}</span>
-                      </>
-                    ) : null}{" · "}
-                    Submitted {formatAdminDate(report.created_at)}
-                  </p>
-                  {report.notes ? (
-                    <p className="text-sm text-zinc-600">{report.notes}</p>
-                  ) : null}
-                  {report.moderation_reason ? (
-                    <p className="text-xs text-amber-700">
-                      Moderation: {report.moderation_reason}
-                    </p>
-                  ) : null}
-                  {report.places?.id ? (
-                    <Link
-                      href={`/admin/places/${report.places.id}`}
-                      className="text-sm font-medium text-cobalt-600 hover:underline"
-                    >
-                      Open place →
-                    </Link>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                  <Button
-                    size="sm"
-                    onClick={() => void approveReport(report.id)}
-                  >
-                    Approve
-                  </Button>
-                  <div className="w-[5.75rem]">
-                    {report.status === "flagged" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => void patchReport(report.id, "active")}
-                      >
-                        Restore
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        disabled={report.status === "removed"}
-                        onClick={() =>
-                          void patchReport(report.id, "flagged", "Needs review")
-                        }
-                      >
-                        Flag
-                      </Button>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={report.status === "removed"}
-                    onClick={() =>
-                      void patchReport(report.id, "removed", "Admin removal")
-                    }
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {reports.length === 0 ? (
-            <EmptyState message="No reports need review." />
-          ) : null}
-        </section>
-      ) : null}
-
-      {tab === "flags" ? (
-        <section
-          id="admin-panel-flags"
-          role="tabpanel"
-          aria-labelledby="admin-tab-flags"
-          className="space-y-3"
-        >
-          {flagGroups.map((group) => (
-            <Card key={group.placeId} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
-              <CardHeader className="pb-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">
-                      {group.placeName ?? "Unknown place"}
-                    </p>
-                    <p className="text-sm text-zinc-600">
-                      {group.placeCity ?? "Unknown city"} ·{" "}
-                      {formatAdminFlagGroupHeadline(group)}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {group.reasons.map((reason) => (
-                      <Badge key={reason} variant="warning">
-                        {FLAG_REASON_LABELS[reason] ?? reason}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3 pt-0">
-                <ul className="space-y-2 text-sm text-zinc-600">
-                  {group.flags.map((flag) => (
-                    <li key={flag.id} className="rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-900/50">
-                      <p>
-                        {FLAG_REASON_LABELS[flag.reason] ?? flag.reason} ·{" "}
-                        {flag.reporter.username ?? "unknown"}
-                        {flag.reporter.id !== "unknown" ? (
-                          <>
-                            {" · "}
-                            <span className="font-mono text-xs">
-                              {flag.reporter.id}
-                            </span>
-                          </>
-                        ) : null}{" "}
-                        · {formatAdminDate(flag.createdAt)}
-                      </p>
-                      {flag.details ? (
-                        <p className="mt-1 text-zinc-700 dark:text-zinc-300">
-                          {flag.details}
-                        </p>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-                <div className="flex flex-wrap gap-2">
-                  <Link href={`/admin/places/${group.placeId}`}>
-                    <Button size="sm" variant="outline">
-                      Open place
-                    </Button>
-                  </Link>
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      void resolvePlaceFlags(group.placeId, "resolved")
-                    }
-                  >
-                    Resolve all
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void resolvePlaceFlags(group.placeId, "dismissed")
-                    }
-                  >
-                    Dismiss all
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {flagGroups.length === 0 ? (
-            <EmptyState message="No open flags." />
-          ) : null}
-        </section>
-      ) : null}
-
-      {tab === "places" ? (
-        <section
-          id="admin-panel-places"
-          role="tabpanel"
-          aria-labelledby="admin-tab-places"
-          className="space-y-6"
-        >
-          <form
-            onSubmit={submitPlaceSearch}
-            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-          >
-            <div className="space-y-1 sm:col-span-2 lg:col-span-1">
-              <Label htmlFor="place-search-name">Merchant name</Label>
-              <Input
-                id="place-search-name"
-                value={placeSearchInputs.name}
-                onChange={(e) =>
-                  setPlaceSearchInputs((current) => ({
-                    ...current,
-                    name: e.target.value,
-                  }))
-                }
-                placeholder="Name or place UUID"
-                spellCheck={false}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="place-search-postal">Postal code</Label>
-              <Input
-                id="place-search-postal"
-                value={placeSearchInputs.postalCode}
-                onChange={(e) =>
-                  setPlaceSearchInputs((current) => ({
-                    ...current,
-                    postalCode: formatCanadianPostalCodeInput(e.target.value),
-                  }))
-                }
-                placeholder="A1A 1A1"
-                maxLength={7}
-                spellCheck={false}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="place-search-address">Address</Label>
-              <Input
-                id="place-search-address"
-                value={placeSearchInputs.addressLine1}
-                onChange={(e) =>
-                  setPlaceSearchInputs((current) => ({
-                    ...current,
-                    addressLine1: e.target.value,
-                  }))
-                }
-                placeholder="Street address"
-                spellCheck={false}
-              />
-            </div>
-            <div className="flex items-end sm:col-span-2 lg:col-span-4">
-              <Button type="submit" disabled={placesLoading}>
-                {placesLoading ? "Searching…" : "Look up"}
-              </Button>
-            </div>
-            {placeSearchError ? (
-              <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-4">
-                {placeSearchError}
-              </p>
-            ) : (
-              <p className="text-xs text-zinc-500 sm:col-span-2 lg:col-span-4">
-                Fill in one or more fields. Multiple fields narrow the search.
-              </p>
-            )}
-          </form>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Label htmlFor="place-filter">Filter</Label>
-            <Select
-              id="place-filter"
-              value={placeFilter}
-              onChange={(e) => {
-                setPlaceFilter(e.target.value);
-                setPlacePage(1);
-              }}
-            >
-              <option value="all">All statuses</option>
-              <option value="active">Active</option>
-              <option value="permanently_closed">Permanently closed</option>
-              <option value="merged">Merged</option>
-            </Select>
-          </div>
-
-          {placesTotal > 0 ? (
-            <PlacesPagination
-              page={placePage}
-              total={placesTotal}
-              loading={placesLoading}
-              onPageChange={setPlacePage}
-            />
-          ) : null}
-
-          <div className="space-y-3">
-            {filteredPlaces.map((place) => (
-              <Card key={place.id} className="shadow-none transition-colors duration-200 hover:border-zinc-300 dark:hover:border-zinc-700">
-                <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{place.name}</p>
-                      <Badge variant={placeStatusVariant(place.status)}>
-                        {place.status.replaceAll("_", " ")}
-                      </Badge>
-                    </div>
-                    {place.address_line1 ? (
-                      <p className="text-sm text-zinc-600">{place.address_line1}</p>
-                    ) : null}
-                    <p className="text-sm text-zinc-600">
-                      {place.city}, {place.province}
-                      {place.postal_code ? ` · ${place.postal_code}` : ""} ·{" "}
-                      {getCategoryLabel(place.category)}
-                    </p>
-                    <p className="font-mono text-xs text-zinc-500">{place.id}</p>
-                    <Link
-                      href={`/admin/places/${place.id}`}
-                      className="text-sm font-medium text-cobalt-600 hover:underline"
-                    >
-                      Open place →
-                    </Link>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {place.status !== "active" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          void patchPlace(place.id, { status: "active" })
-                        }
-                      >
-                        Mark active
-                      </Button>
-                    ) : null}
-                    {place.status !== "permanently_closed" ? (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          void patchPlace(place.id, {
-                            status: "permanently_closed",
-                          })
-                        }
-                      >
-                        Mark closed
-                      </Button>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-            {filteredPlaces.length === 0 && !placesLoading ? (
-              <EmptyState
-                message={
-                  placeSearchCriteria
-                    ? "No places match this search."
-                    : "Enter a merchant name, postal code, or address to look up places."
-                }
-              />
-            ) : null}
-            {placesLoading && filteredPlaces.length === 0 ? (
-              <p className="text-sm text-zinc-600">Loading places…</p>
-            ) : null}
-          </div>
-
-          {placesTotal > PLACES_PAGE_SIZE ? (
-            <PlacesPagination
-              page={placePage}
-              total={placesTotal}
-              loading={placesLoading}
-              onPageChange={setPlacePage}
-            />
-          ) : null}
-
-          <Card>
-            <CardHeader>
-              <h2 className="font-semibold">Merge duplicate places</h2>
-              <p className="text-sm text-zinc-600">
-                Moves reports from the source place to the target, then marks the
-                source as merged.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={(e) => void mergePlaces(e)} className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="merge-source">Source place ID</Label>
-                    <Input
-                      id="merge-source"
-                      value={mergeSourceId}
-                      onChange={(e) => setMergeSourceId(e.target.value)}
-                      placeholder="Duplicate to remove"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="merge-target">Target place ID</Label>
-                    <Input
-                      id="merge-target"
-                      value={mergeTargetId}
-                      onChange={(e) => setMergeTargetId(e.target.value)}
-                      placeholder="Place to keep"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="merge-reason">Reason (optional)</Label>
-                  <Input
-                    id="merge-reason"
-                    value={mergeReason}
-                    onChange={(e) => setMergeReason(e.target.value)}
-                    placeholder="Duplicate listing"
-                  />
-                </div>
-                <Button type="submit" disabled={merging}>
-                  {merging ? "Merging…" : "Merge places"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </section>
-      ) : null}
-
-      {tab === "users" && isAdmin ? (
-        <section
-          id="admin-panel-users"
-          role="tabpanel"
-          aria-labelledby="admin-tab-users"
-          className="space-y-4"
-        >
-          <Card>
-            <CardHeader>
-              <h2 className="font-semibold">Look up by UUID</h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Paste a user UUID from reports or flags to manage their role and
-                status.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <form
-                onSubmit={(e) => void searchUserById(e)}
-                className="flex flex-col gap-3 sm:flex-row sm:items-end"
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <Label htmlFor="user-lookup-id">User UUID</Label>
-                  <Input
-                    id="user-lookup-id"
-                    value={userLookupId}
-                    onChange={(e) => setUserLookupId(e.target.value)}
-                    placeholder="00000000-0000-0000-0000-000000000000"
-                    spellCheck={false}
-                    className="font-mono text-sm"
-                  />
-                </div>
-                <Button type="submit" disabled={lookupLoading}>
-                  {lookupLoading ? "Looking up…" : "Look up"}
-                </Button>
-              </form>
-              {userLookupError ? (
-                <p className="mt-3 text-sm text-red-600">{userLookupError}</p>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          {lookupUser ? (
-            <AdminUserCard
-              user={lookupUser}
-              currentUserId={session?.id}
-              onUpdate={(updated) => {
-                setLookupUser(updated);
-                setUsers((current) =>
-                  current.map((entry) =>
-                    entry.id === updated.id ? updated : entry,
-                  ),
-                );
-              }}
-              onPatch={patchUser}
-            />
-          ) : null}
-
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-              Recent users
-            </h2>
-            {users.map((user) => (
-              <AdminUserCard
-                key={user.id}
-                user={user}
-                currentUserId={session?.id}
-                onUpdate={(updated) => {
-                  setUsers((current) =>
-                    current.map((entry) =>
-                      entry.id === updated.id ? updated : entry,
-                    ),
-                  );
-                  if (lookupUser?.id === updated.id) {
-                    setLookupUser(updated);
-                  }
-                }}
-                onPatch={patchUser}
-              />
-            ))}
-            {users.length === 0 ? (
-              <EmptyState message="No users loaded." />
-            ) : null}
-          </div>
-        </section>
-      ) : null}
+        {tab === "overview" ? <OverviewTab stats={stats} isAdmin={isAdmin} showHints={Boolean((!hintsDismissed || hintsExpanded) && session)} onDismissHints={dismissAdminHints} /> : null}
+        {tab === "reports" ? <ReportsTab reports={reports} onApprove={(id) => void approveReport(id)} onPatch={(id, status, reason) => void patchReport(id, status, reason)} /> : null}
+        {tab === "flags" ? <FlagsTab flagGroups={flagGroups} onResolve={(placeId, status) => void resolvePlaceFlags(placeId, status)} /> : null}
+        {tab === "places" ? (
+          <PlacesTab
+            places={filteredPlaces}
+            total={placesTotal}
+            page={placePage}
+            loading={placesLoading}
+            searchInputs={placeSearchInputs}
+            searchCriteria={placeSearchCriteria}
+            searchError={placeSearchError}
+            filter={placeFilter}
+            mergeInputs={{ sourceId: mergeSourceId, targetId: mergeTargetId, reason: mergeReason }}
+            merging={merging}
+            onSearchInputsChange={setPlaceSearchInputs}
+            onSubmitSearch={submitPlaceSearch}
+            onFilterChange={(value) => { setPlaceFilter(value); setPlacePage(1); }}
+            onPageChange={setPlacePage}
+            onPatchPlace={(id, updates) => void patchPlace(id, updates)}
+            onMergeInputsChange={(inputs) => { setMergeSourceId(inputs.sourceId); setMergeTargetId(inputs.targetId); setMergeReason(inputs.reason); }}
+            onSubmitMerge={(event) => void mergePlaces(event)}
+          />
+        ) : null}
+        {tab === "users" && isAdmin ? (
+          <UsersTab
+            users={users}
+            lookupUser={lookupUser}
+            lookupId={userLookupId}
+            lookupError={userLookupError}
+            lookupLoading={lookupLoading}
+            currentUserId={session?.id}
+            onLookupIdChange={setUserLookupId}
+            onLookup={(event) => void searchUserById(event)}
+            onUserUpdated={(updated) => {
+              setUsers((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+              if (lookupUser?.id === updated.id) setLookupUser(updated);
+            }}
+            onPatchUser={patchUser}
+          />
+        ) : null}
       </div>
 
       {hintsDismissed && !hintsExpanded ? (
