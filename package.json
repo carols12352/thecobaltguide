@@ -1,7 +1,8 @@
 {
   "name": "thecobaltguide",
-  "version": "1.6.0",
+  "version": "1.6.8",
   "private": true,
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
   },
@@ -19,7 +20,8 @@
     "test:architecture": "node scripts/assert-prerendered-routes.mjs",
     "test:lighthouse": "node scripts/run-lighthouse.mjs",
     "baseline:api": "node scripts/measure-api-baseline.mjs",
-    "replace:rewards-canada": "tsx supabase/scripts/replace-rewards-canada-seed.ts"
+    "replace:rewards-canada": "tsx supabase/scripts/replace-rewards-canada-seed.ts",
+    "backfill:google-place-ids": "tsx --env-file=.env.local supabase/scripts/backfill-google-place-ids.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.65.0",

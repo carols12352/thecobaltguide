@@ -11,9 +11,9 @@ Users can browse and filter merchants, submit locations and multiplier reports, 
 - Runtime: Next.js 16 App Router, React 19, and Node.js 22+.
 - Data: Supabase PostgreSQL/PostGIS with Row Level Security.
 - Optional infrastructure: Upstash Redis and Sentry.
-- Quality baseline: 54 Vitest files / 254 tests, plus live Supabase, Playwright, architecture, and Lighthouse suites.
+- Quality baseline: 56 Vitest files / 266 tests, plus live Supabase, Playwright, architecture, and Lighthouse suites.
 - Architecture: modular monolith using route → service → repository boundaries.
-- Current milestone: Stage A and Stage B are preserved legacy milestones; Stage C (C1-C4) is complete.
+- Current milestone: Stage A and Stage B are preserved legacy milestones; Stage C (C1-C4) is complete; Stage D implementation and documentation are in review, with final release verification still open.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries, operational readiness, completed milestones, release gates, and deferred opportunities.
 
@@ -27,6 +27,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries, operational readin
 - Grouped recent reports with separate submission and unique-reporter counts.
 - Missing-place submissions, duplicate checks, and data-quality flags.
 - Mapbox and Nominatim geocoding with authentication, quotas, caching, timeout, retry, and fallback policies.
+- Optional Google Maps and Apple Maps links for a selected merchant. Google links prefer a stored Place ID for precise targeting; both providers fall back safely when optional provider data is unavailable.
 
 ### Accounts and moderation
 
@@ -68,7 +69,7 @@ The application remains one deployable unit. Provider transport is isolated in `
 - npm.
 - A Supabase project with PostGIS.
 - A compatible map style; the default OpenFreeMap style is keyless.
-- Optional for production: Upstash Redis, Sentry, and a Mapbox access token.
+- Optional for production: Upstash Redis, Sentry, a Mapbox access token, and a server-only Google Places API key for precise Google Maps links.
 
 ## Local development
 
@@ -100,6 +101,14 @@ Optional Mapbox geocoding:
 ```dotenv
 MAPBOX_ACCESS_TOKEN=your-mapbox-token
 ```
+
+Optional Google Place ID resolution:
+
+```dotenv
+GOOGLE_PLACES_API_KEY=your-google-places-key
+```
+
+Restrict this server-only key to Places API (New). The application still generates valid Google Maps links without it, but those links use the encoded merchant name/address and coordinates instead of a Place ID.
 
 Optional distributed caching and rate limiting:
 
@@ -160,10 +169,12 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run test:integration` | Run transactional workflow tests against local/disposable Supabase |
 | `npm run test:e2e` | Run public mobile/a11y/discovery/security checks and the fixture-backed critical path |
 | `npm run test:architecture` | Assert built public routes are prerendered and private routes remain dynamic |
-| `npm run test:lighthouse` | Check production-build performance, accessibility, best-practice, and SEO budgets |
+| `npm run test:lighthouse` | Run three samples per route, enforce median Lighthouse budgets, and retain reports outside the repository |
 | `npm run baseline:api` | Record API latency, cache headers, and `Server-Timing` |
 | `npm run replace:rewards-canada` | Validate and preview the reviewed seed replacement |
 | `npm run replace:rewards-canada -- --apply --replace` | Atomically replace the reviewed seed |
+| `npm run backfill:google-place-ids -- --limit=100` | Preview high-confidence, manual-review, and unmatched Google Place ID counts |
+| `npm run backfill:google-place-ids -- --limit=100 --write` | Save only high-confidence Google Place ID matches; leave all others on the URL fallback |
 
 Standard verification before submitting changes:
 
@@ -213,7 +224,7 @@ The repository targets Vercel or another Node.js 22+ host.
 
 See [Preview deployment operations](docs/preview-deployment.md) for command parameters, permissions, required secrets, performance measurement, and troubleshooting.
 
-Before production deployment, apply every migration through `20260717130000`, run the live database suites in a disposable environment, and verify the map/geocoding critical path. The primary hosted verification recorded on 2026-07-14 predates the transactional and privacy migrations and is not sufficient evidence for a new environment.
+Before production deployment, apply every migration through `20260720190000_google_place_ids.sql`, run the live database suites in a disposable environment, and verify the map/geocoding/external-navigation critical path. The primary hosted verification recorded on 2026-07-14 predates the transactional, privacy, and Google Place ID migrations and is not sufficient evidence for a new environment.
 
 ## Data and operational notes
 
@@ -222,6 +233,32 @@ Before production deployment, apply every migration through `20260717130000`, ru
 - Without Redis, reads fall back to Supabase and rate limits are process-local.
 - The reviewed Rewards Canada seed is installed only through the explicit replacement script. See [supabase/scripts/README.md](supabase/scripts/README.md).
 - Repeatable performance measurements and the separate CDN/origin interpretation are documented in [docs/performance-baseline.md](docs/performance-baseline.md).
+
+## Stage D pre-release milestone
+
+Stage D is the current pre-release milestone. Its implementation is under review in [PR #10](https://github.com/carols12352/thecobaltguide/pull/10), while [issue #9](https://github.com/carols12352/thecobaltguide/issues/9) remains the task tracker.
+
+### Delivered in D1-D3
+
+- External navigation opens Google Maps or Apple Maps in a new tab without requesting the user's device location or choosing a route on the user's behalf.
+- A shared browser-safe URL builder validates WGS84 coordinates, fixes them to six decimal places, encodes merchant data, and omits actions for malformed coordinates.
+- Google Maps prefers `places.google_place_id`. A server-only Google Places text search can resolve IDs for newly moderated places, and the backfill command previews existing-place matches unless `--write` is explicitly supplied.
+- The repository now includes the AGPL-3.0-only license, contribution and conduct guidance, a private security policy, issue forms, a pull-request template, and focused maintenance labels.
+- README and architecture documentation describe the Stage D boundaries and release status.
+
+### Boundaries and remaining release work
+
+- MapLibre remains the in-app map. External providers receive only the destination data needed to open their site; starting point, routing, transport mode, account state, and navigation remain under the provider and user's control.
+- Google Places lookup is optional and server-only. Failure or a missing key does not block place creation or external links.
+- The schema migration and reviewed Place ID backfill must be applied separately in each target environment.
+- D4 is not complete. Preview deployment, live database suites, credential-backed E2E, Lighthouse, smoke testing, CSP review, migration evidence, and the release/rollback record remain governed by the canonical [pre-production release checklist](ARCHITECTURE.md#pre-production-release-checklist).
+
+## Contributing, security, and license
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Use the in-product Report action for an individual merchant correction whenever possible.
+- Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) in project spaces.
+- Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/carols12352/thecobaltguide/security/advisories/new) or the fallback process in [SECURITY.md](SECURITY.md). Do not put credentials, receipts, account information, or personal data in public issues.
+- The original application code is licensed under [GNU AGPL v3.0 only](LICENSE). Commercial use is allowed, but the license's attribution, notice, source-availability, and corresponding-source obligations apply. Third-party merchant data, map tiles, provider content, names, logos, and trademarks retain their own terms.
 
 ## Stage C completion
 

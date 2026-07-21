@@ -1,6 +1,10 @@
 import maplibregl from "maplibre-gl";
 import { formatConfidence, formatMultiplier, formatPlaceLocation } from "@/lib/utils";
 import type { ConfidenceLevel, MapPlace } from "@/types/domain";
+import {
+  buildExternalMapLinks,
+  EXTERNAL_MAP_ICON_URLS,
+} from "@/lib/map/external-map-links";
 
 function escapeHtml(value: string): string {
   return value
@@ -33,6 +37,19 @@ export function buildPlacePopupHtml(place: MapPlace): string {
   const reportsLabel = escapeHtml(
     `${place.recentReportCount} recent report${place.recentReportCount === 1 ? "" : "s"}`,
   );
+  const mapLinks = buildExternalMapLinks({
+    latitude: place.latitude,
+    longitude: place.longitude,
+    label: place.name,
+    addressLine1: place.addressLine1,
+    city: place.city,
+    province: place.province,
+  })
+    .map(
+      (link) =>
+        `<a class="place-popup-map-link" href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer"><img class="place-popup-map-icon" src="${escapeHtml(EXTERNAL_MAP_ICON_URLS[link.provider])}" alt="" aria-hidden="true">${escapeHtml(link.label)}<span class="place-popup-sr-only"> (opens in a new tab)</span></a>`,
+    )
+    .join("");
 
   return `
     <div class="place-popup">
@@ -43,6 +60,7 @@ export function buildPlacePopupHtml(place: MapPlace): string {
         <span class="place-popup-pill ${confidenceClass}">${confidence}</span>
         <span class="place-popup-pill place-popup-pill-muted">${reportsLabel}</span>
       </div>
+      ${mapLinks ? `<nav class="place-popup-map-links" aria-label="Open ${name} in an external map">${mapLinks}</nav>` : ""}
       <p class="place-popup-footer">
         Something wrong?
         <a class="place-popup-report-link" href="/place/${place.id}">Report</a>

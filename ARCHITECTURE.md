@@ -1,6 +1,6 @@
 # Cobalt Merchant Map — Architecture
 
-> Last reviewed: 2026-07-20 after completion of Stage C (C1-C4).
+> Last reviewed: 2026-07-20 for Stage D documentation and pre-release tracking.
 >
 > Source of truth: application code and `supabase/migrations/`. This document explains current boundaries, release gates, and deferred product opportunities.
 
@@ -14,6 +14,7 @@ The application is a **modular monolith**:
 - Supabase provides Auth, PostgreSQL, PostGIS, and Row Level Security (RLS).
 - Upstash Redis is configured in the deployed environment for distributed cache and rate limiting; local development still supports the documented in-memory/direct-database fallback.
 - Mapbox and Nominatim provide synchronous geocoding behind one provider boundary.
+- Google Places optionally resolves stable merchant identifiers server-side; Google Maps and Apple Maps receive destination-only HTTPS links from a browser-safe URL builder.
 
 One deployable application is the right topology for the current product, team, and transaction model. There is no measured need for microservices, Kubernetes, a read replica, a dedicated search service, or vector tiles.
 
@@ -24,7 +25,7 @@ One deployable application is the right topology for the current product, team, 
 | TypeScript/TSX | About 18.2k lines |
 | Route Handlers | 25 |
 | Database | One Supabase PostgreSQL database with PostGIS |
-| Unit baseline | 54 files / 254 Vitest tests |
+| Unit baseline | 56 files / 266 Vitest tests |
 | Live database coverage | 16 RLS/grant tests and 3 transactional integration tests passed on `main@0b11f58` in GitHub Actions |
 | Browser coverage | Six fixture-free Playwright cases pass locally; the environment-backed critical path passed on `main@0b11f58` and now includes dialog focus verification when fixtures are present |
 | CI | Lint, typecheck, unit tests, build, live database suites, E2E, architecture assertions, Lighthouse budgets, and on-demand API performance baselines |
@@ -39,6 +40,7 @@ These numbers are a point-in-time orientation aid, not architecture targets.
 Browser
   ├─ Server-rendered pages and client components
   ├─ Supabase Auth client
+  ├─ Destination-only Google Maps / Apple Maps links
   └─ /api/* requests
           │
           ▼
@@ -46,7 +48,7 @@ Next.js modular monolith
   ├─ Route Handlers: auth, input validation, HTTP response contracts
   ├─ Services: domain orchestration, aggregation, caching
   ├─ Repositories: Supabase reads/writes and Postgres RPCs
-  └─ Geocoding provider client: Mapbox/Nominatim transport policy
+  └─ Provider clients: Mapbox/Nominatim geocoding and optional Google Place ID resolution
           │
           ├──────────────► Upstash Redis (configured in deployment)
           │                 cache and distributed limits
@@ -94,6 +96,7 @@ Large interactive components may keep local API models and presentation-only pie
 | Reputation | Submission and moderation score changes, low-score write block | reputation service and scoring helpers |
 | Accounts/auth | Supabase sign-in methods, roles, suspension, recent activity | auth helpers, account routes/components |
 | Geocoding | Structured/reverse lookup, provider ranking, city filtering, fallback | geocoding service/provider client |
+| External navigation | Validated Google Maps/Apple Maps links and optional Google Place ID resolution | map URL helper, place services/repositories, Google Places client |
 | Cache/limits | CDN headers, Redis cache, version invalidation, Redis/in-memory quotas | cache and rate-limit helpers |
 
 The schema carries `card_product_id`, but the current product experience and fixtures prove only one active product: Amex Cobalt.
@@ -105,7 +108,7 @@ The schema carries `card_product_id`, but the current product experience and fix
 - `profiles`: role, status, reputation, and contribution counts.
 - `merchant_brands`: optional shared merchant identity.
 - `card_products`: card definitions; seeded with Amex Cobalt.
-- `places`: physical locations with PostGIS geography.
+- `places`: physical locations with PostGIS geography and an optional Google Place ID used only for precise Google Maps links.
 - `multiplier_reports`: raw community evidence and moderation state.
 - `place_multiplier_summaries`: precomputed place/card result.
 - `merchant_multiplier_coverages`: non-point geographic coverage.
@@ -164,6 +167,35 @@ Deployment evidence on 2026-07-17 shows sustained Upstash command traffic/storag
 
 ## 8. External systems and deployment
 
+### External map navigation
+
+External navigation is an optional exit from the in-app MapLibre experience, not a routing or device-location feature.
+
+```text
+Place API projection
+  name + address + WGS84 latitude/longitude + optional google_place_id
+          │
+          ▼
+lib/map/external-map-links.ts
+  validate ranges → fix to 6 decimals → URL/URLSearchParams encode
+          │
+          ├────────► Google Maps search URL
+          │           query_place_id + coordinates when an ID exists
+          │           encoded name/address query otherwise
+          └────────► Apple Maps URL
+                      coordinates + merchant label
+```
+
+- Google Maps and Apple Maps are the only external providers exposed. OpenStreetMap is not part of the Stage D external-navigation UI.
+- Invalid, missing, non-finite, or out-of-range coordinates produce no actionable link.
+- The application does not request the user's location, select an origin, construct a route, inspect a provider account, or add navigation analytics.
+- Links use ordinary HTTPS endpoints, accessible provider labels, `target="_blank"`, and `rel="noopener noreferrer"`.
+- Provider icons are fetched by the browser from Simple Icons' CDN. They are presentation-only; link generation and navigation remain usable independently of icon loading.
+
+Migration `20260720190000_google_place_ids.sql` adds nullable `places.google_place_id` plus a partial index for populated values. New or moderated places can resolve a Place ID through `server/geocoding/google-places.ts`: the server sends a text query and a 100-metre coordinate bias to Places API (New), requests the candidate ID plus the minimum identity/location fields needed for confidence checks, and applies a five-second timeout. A missing key, provider error, timeout, empty result, or ambiguous candidate returns `null` and does not block the authoritative place write.
+
+Existing records use the explicit `supabase/scripts/backfill-google-place-ids.ts` operation. It scans at most 100 records by default, caps a run at 1,000, and classifies candidates by merchant-name similarity, coordinate distance, postal code, and street number. Even with `--write`, only high-confidence candidates within 150 metres are stored; ambiguous and unmatched records remain null and continue using the external-link URL fallback until corrected through community reports or later maintenance. Writes target still-null IDs and invalidate place/admin caches.
+
 ### Geocoding
 
 - Geocode routes require authentication and enforce per-IP and per-user quotas.
@@ -178,14 +210,38 @@ The Sentry deployment credentials, Next.js server SDK, and request-error instrum
 
 The production project also shows a real captured error and an Error Monitor with an active alert rule, completing the C1 ingestion/alert evidence. Readable TypeScript source maps and release-to-commit correlation should still be spot-checked when investigating an error, but they no longer block C1 acceptance. Session Replay is not required; if introduced later, sensitive account, address, and report fields must be masked by default.
 
+### Open-source maintenance boundary
+
+Stage D adds the minimum public-maintenance surface:
+
+- `LICENSE` applies AGPL-3.0-only to the repository's original application code;
+- `CONTRIBUTING.md` defines setup, verification, PR expectations, merchant corrections, and third-party material boundaries;
+- `CODE_OF_CONDUCT.md` uses the Contributor Covenant with `support@sicheng.dev` as the enforcement contact;
+- `SECURITY.md` directs vulnerabilities to GitHub private vulnerability reporting, with `support@sicheng.dev` as the fallback contact;
+- issue forms prevent public disclosure of receipts, account information, credentials, and other personal data;
+- the PR template records scope, verification, migration, security/privacy, screenshots, and issue linkage.
+
+The application license does not relicense third-party merchant data, map data/tiles, provider content, names, logos, or trademarks. Provider calls and linked services remain subject to their own terms. GitHub private vulnerability reporting was verified enabled during Stage D.
+
+### Stage D release status
+
+| Phase | Status | Acceptance evidence |
+| --- | --- | --- |
+| D1 — external navigation | Implemented in PR #10 | URL/Place ID unit tests, popup/detail coverage, migration and preview-first backfill tooling |
+| D2 — open-source maintenance | Implemented in PR #10 | License, policies, templates, labels, and private vulnerability reporting |
+| D3 — documentation | Complete on `stage-D` | README and this architecture record |
+| D4 — final verification | Open | The canonical checklist below; environment and deployment evidence still required |
+
+D1-D3 completion does not authorize production release. D4 owns release acceptance and must record evidence or an explicit owner-approved disposition for every checklist item.
+
 ### Pre-production release checklist
 
-Stage C is complete in code. The following are operational release gates, not unfinished Stage C feature work:
+Stage C is complete in code and D1-D3 are implemented on `stage-D`. The following are the canonical D4 operational release gates, not unfinished Stage C feature work:
 
-- [ ] Confirm the release commit passes lint, typecheck, unit tests, production build, architecture assertions, Lighthouse budgets, live RLS/integration suites, and the fixture-backed E2E workflow. Treat an isolated Lighthouse failure as a signal to rerun and investigate, not as permission to lower the budget.
-- [ ] Apply every migration through `20260717130000` to the intended Supabase project and record the migration status. The 2026-07-14 hosted verification predates the transactional and privacy migrations.
+- [ ] Confirm the release commit passes lint, typecheck, unit tests, production build, architecture assertions, Lighthouse budgets, live RLS/integration suites, and the fixture-backed E2E workflow. Lighthouse uses three independent samples per route, gates on the median without lowering the budget, and retains JSON/HTML evidence for every sample.
+- [ ] Apply every migration through `20260720190000_google_place_ids.sql` to the intended Supabase project and record the migration status. Preview and review Google Place ID matches before any `--write` backfill. The 2026-07-14 hosted verification predates the transactional, privacy, and Place ID migrations.
 - [ ] Create a Vercel Preview with `/deploy`, run `/performance <preview_url> 30`, and retain the workflow links. Check CDN warm latency separately from the origin probe and inspect `Server-Timing` for Redis/database regressions.
-- [ ] Smoke-test sign-in, map/search, geocoding, report submission/removal, moderation, account export/deletion, and mutation-driven cache invalidation against disposable fixtures or the intended environment.
+- [ ] Smoke-test sign-in, map/search, Google Maps/Apple Maps destinations, Place ID fallback behavior, geocoding, report submission/removal, moderation, account export/deletion, and mutation-driven cache invalidation against disposable fixtures or the intended environment.
 - [ ] Verify Redis-backed cache and distributed rate limiting, then exercise the documented direct-database and in-memory fallback behavior without exposing credentials.
 - [ ] Verify a sanitized browser error and navigation trace in deployed Sentry, confirm the alert owner, and spot-check source-map readability and release-to-commit correlation.
 - [ ] Review report-only CSP findings for Supabase, OpenFreeMap/Mapbox, Google OAuth, Nominatim, and Sentry before deciding whether to enforce the policy.
@@ -200,7 +256,7 @@ The dependency audit currently reports two moderate advisories through Next.js' 
 - An authorized `/deploy` PR comment runs the workflow definition from `main` and deploys that PR's verified same-repository head SHA.
 - `release` is excluded and separately managed.
 
-The primary hosted database was inspected on 2026-07-14 for the RLS/grant hardening chain. That verification predates `20260715120000`; every target environment must apply the complete chain and run live tests before deployment.
+The primary hosted database was inspected on 2026-07-14 for the RLS/grant hardening chain. That verification predates `20260715120000` and the Stage D Place ID migration; every target environment must apply the complete chain and run live tests before deployment.
 
 ## 9. Legacy milestones (preserved)
 
@@ -337,18 +393,16 @@ The first likely extraction, if a selected feature needs it, is an asynchronous 
 
 ## 14. Verification baseline
 
-Verified locally on 2026-07-20 after C4 implementation:
+Verified locally on 2026-07-20 for the Stage D implementation branch:
 
 ```text
 npm run lint       passed
 npm run typecheck  passed
-npm test           54 files, 254 tests passed
+npm test           56 files, 266 tests passed
 npm run build      passed (8 public routes prerendered; Account/Admin dynamic)
-npm run test:architecture  passed
-npm run test:e2e   6 passed, 1 fixture-backed test skipped
 ```
 
-The latest Lighthouse baseline remains the 2026-07-18 C3 run: Home/About scored 94/100/100/100.
+The prior Stage C architecture and fixture-free E2E suites passed before Stage D. They, the credential-backed critical path, and a fresh Lighthouse run remain D4 gates rather than being represented as current Stage D evidence. The latest Lighthouse baseline remains the 2026-07-18 C3 run: Home/About scored 94/100/100/100.
 
 The RLS and transactional suites could not run locally because Docker/Supabase was not active; both stopped before executing tests. GitHub Actions supplied the authoritative disposable-environment evidence for `main@0b11f58`, as linked in C1 above. The updated authenticated E2E focus step remains to be exercised with disposable fixtures.
 

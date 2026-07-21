@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "The Cobalt Guide — community-reported merchant multipliers across Canada";
+export const alt = "The Cobalt Guide — Cobalt merchant multipliers across Canada";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -39,7 +39,7 @@ export default function OpenGraphImage() {
           </div>
         </div>
         <div style={{ color: "#a1a1aa", display: "flex", fontSize: 24 }}>
-          Merchant multipliers with recency and confidence context
+          Find Cobalt merchant multipliers across Canada
         </div>
       </div>
     </div>,

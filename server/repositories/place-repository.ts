@@ -28,8 +28,12 @@ export class PlaceRepository {
   findByIdForAdmin = adminPlaceQueryRepository.findByIdForAdmin.bind(adminPlaceQueryRepository);
   searchForAdmin = adminPlaceQueryRepository.searchForAdmin.bind(adminPlaceQueryRepository);
 
-  async create(input: CreatePlaceInput, userId: string) {
-    return placeWriteRepository.create(input, userId);
+  async create(
+    input: CreatePlaceInput,
+    userId: string,
+    googlePlaceId?: string | null,
+  ) {
+    return placeWriteRepository.create(input, userId, googlePlaceId);
   }
 
   async findPossibleDuplicates(input: CreatePlaceInput) {

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { ExternalMapLinks } from "@/components/map/external-map-links";
 import { getCategoryLabel } from "@/config/categories";
 import { formatConfidence, formatDate, formatMultiplier, formatPlaceAddress } from "@/lib/utils";
 import { formatPlaceReportGroupLabel } from "@/lib/reports/place-report-groups";
@@ -35,6 +36,17 @@ export function PlaceDetails({ place }: { place: PlaceDetail }) {
             </Badge>
           )}
         </div>
+        <ExternalMapLinks
+          latitude={place.latitude}
+          longitude={place.longitude}
+          placeName={place.name}
+          addressLine1={place.addressLine1}
+          city={place.city}
+          province={place.province}
+          postalCode={place.postalCode}
+          googlePlaceId={place.googlePlaceId}
+          className="mt-4"
+        />
       </div>
 
       <Card>

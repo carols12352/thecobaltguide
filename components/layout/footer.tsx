@@ -12,9 +12,11 @@ export function Footer() {
             The Cobalt Guide
           </div>
           <p className="mt-3 max-w-md text-xs leading-5">
-            Community-sourced reference data — card issuers may classify transactions differently.
+            Community-maintained merchant data.
           </p>
-          <p className="mt-5 text-xs text-zinc-400">© 2026 The Cobalt Guide. Independent community project.</p>
+          <p className="mt-5 text-xs leading-5 text-zinc-400">
+            © 2026 Sicheng Ouyang. All rights reserved.
+          </p>
         </div>
         <nav aria-label="Product links">
           <p className="text-xs font-semibold tracking-wide text-zinc-200 uppercase">Product</p>
@@ -22,7 +24,7 @@ export function Footer() {
             <li><Link href="/map" className="rounded-sm transition-colors duration-200 hover:text-white">Explore map</Link></li>
             <li><Link href="/about" className="rounded-sm transition-colors duration-200 hover:text-white">About</Link></li>
             <li><Link href="/submit" className="rounded-sm transition-colors duration-200 hover:text-white">Add merchant</Link></li>
-            <li><a href="https://github.com/carols12352/thecobaltguide" target="_blank" rel="noopener noreferrer" className="rounded-sm transition-colors duration-200 hover:text-white">GitHub <span aria-hidden="true">↗</span></a></li>
+            <li><a href="https://github.com/carols12352/thecobaltguide" target="_blank" rel="noopener noreferrer" className="rounded-sm transition-colors duration-200 hover:text-white">GitHub</a></li>
           </ul>
         </nav>
         <nav aria-label="Legal links">
@@ -30,6 +32,7 @@ export function Footer() {
           <ul className="mt-4 space-y-3 text-sm">
             <li><Link href="/privacy" className="rounded-sm transition-colors duration-200 hover:text-white">Privacy Policy</Link></li>
             <li><Link href="/terms" className="rounded-sm transition-colors duration-200 hover:text-white">Terms of Service</Link></li>
+            <li><a href="https://github.com/carols12352/thecobaltguide/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" className="rounded-sm transition-colors duration-200 hover:text-white">License</a></li>
           </ul>
         </nav>
       </div>

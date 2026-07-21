@@ -4,7 +4,11 @@ import { nameSimilarity, normalizeMerchantName } from "@/lib/utils";
 import type { CreatePlaceInput } from "@/server/validation/schemas";
 
 export class PlaceWriteRepository {
-  async create(input: CreatePlaceInput, userId: string) {
+  async create(
+    input: CreatePlaceInput,
+    userId: string,
+    googlePlaceId?: string | null,
+  ) {
     const { data, error } = await createAdminClient().from("places").insert({
       name: input.name,
       normalized_name: normalizeMerchantName(input.name),
@@ -17,6 +21,7 @@ export class PlaceWriteRepository {
       category: input.category,
       accepts_amex: input.acceptsAmex ?? null,
       external_place_id: input.externalPlaceId ?? null,
+      google_place_id: googlePlaceId ?? null,
       brand_id: input.brandId ?? null,
       created_by: userId,
     }).select("id").single();

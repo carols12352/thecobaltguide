@@ -25,6 +25,8 @@ import {
 import type { CreateFlagInput } from "@/server/validation/schemas";
 import { transactionRepository } from "@/server/repositories/transaction-repository";
 import { notFound } from "@/server/services/service-error";
+import { parseGeoLocation } from "@/lib/map/parse-location";
+import { findGooglePlaceId } from "@/server/geocoding/google-places";
 import {
   moderationWriteRepository,
   type AdminPlaceFieldUpdates,
@@ -239,6 +241,34 @@ export class ModerationService {
         placeId,
         placeUpdates as AdminPlaceFieldUpdates,
       );
+      const googleMatchFields = [
+        "name",
+        "addressLine1",
+        "city",
+        "province",
+        "postalCode",
+        "latitude",
+        "longitude",
+      ];
+      if (googleMatchFields.some((field) => field in placeUpdates)) {
+        const coordinates = parseGeoLocation(placeRecord.location);
+        const googlePlaceId = coordinates
+          ? await findGooglePlaceId({
+              name: placeRecord.name as string,
+              addressLine1: placeRecord.address_line1 as string,
+              city: placeRecord.city as string,
+              province: placeRecord.province as string,
+              postalCode: placeRecord.postal_code as string,
+              countryCode: placeRecord.country_code as string,
+              latitude: coordinates.latitude,
+              longitude: coordinates.longitude,
+            })
+          : null;
+        placeRecord = await moderationWriteRepository.updatePlaceFields(
+          placeId,
+          { googlePlaceId },
+        );
+      }
       await invalidatePlaceReadCaches(placeId);
       await invalidateAdminCaches();
       await this.logAction(moderatorId, "place", placeId, "update");

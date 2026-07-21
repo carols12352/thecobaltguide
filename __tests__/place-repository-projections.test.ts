@@ -81,6 +81,7 @@ describe("place repository projection contracts", () => {
       location: "POINT(-79.38 43.65)",
       status: "active",
       brand_id: "brand-1",
+      google_place_id: "google-place-3",
       merchant_brands: { name: "Deli Group" },
     }, {
       current_multiplier: "5",
@@ -98,6 +99,7 @@ describe("place repository projection contracts", () => {
     expect(detail).toMatchObject({
       id: "place-3",
       brandName: "Deli Group",
+      googlePlaceId: "google-place-3",
       latitude: 43.65,
       longitude: -79.38,
       summary: { currentMultiplier: 5, confidenceLevel: "high", score5x: 8.5 },

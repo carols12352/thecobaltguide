@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem with the application
+title: "[Bug]: "
+labels:
+  - bug
+  - pending review
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve The Cobalt Guide. Do not include credentials, receipts, account information, or other personal data. Report vulnerabilities through the private security channel instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reliable sequence that reproduces the problem.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: route
+    attributes:
+      label: Affected page or route
+      placeholder: "Example: /map"
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and device
+      placeholder: "Example: Safari 18 on iPhone"
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional context
+      description: Add sanitized screenshots or logs if useful. Remove tokens, identifiers, and personal data first.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: This report does not contain secrets, receipts, account information, or personal data.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I agree to follow the Code of Conduct.
+          required: true

@@ -21,22 +21,19 @@ export const metadata: Metadata = {
     default: "The Cobalt Guide",
     template: "%s | The Cobalt Guide",
   },
-  description:
-    "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
+  description: "Find Cobalt merchant multipliers across Canada.",
   applicationName: "The Cobalt Guide",
   openGraph: {
     type: "website",
     siteName: "The Cobalt Guide",
     title: "The Cobalt Guide",
-    description:
-      "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
+    description: "Find Cobalt merchant multipliers across Canada.",
     images: ["/opengraph-image"],
   },
   twitter: {
     card: "summary_large_image",
     title: "The Cobalt Guide",
-    description:
-      "Community-driven merchant multiplier discovery for Amex Cobalt cardholders in Canada.",
+    description: "Find Cobalt merchant multipliers across Canada.",
     images: ["/opengraph-image"],
   },
 };

@@ -32,6 +32,7 @@ import {
   formatGeocodeResultLabel,
 } from "@/lib/geocoding/client";
 import { geocodeQuerySchema } from "@/server/validation/schemas";
+import { buildExternalMapUrl } from "@/lib/map/external-map-links";
 import type { z } from "zod";
 import type {
   AdminPlaceDetail,
@@ -425,8 +426,17 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
     );
   }
 
-  const mapsUrl = `https://www.google.com/maps?q=${addressForm.latitude},${addressForm.longitude}`;
   const addressDirty = addressChanged(place, addressForm);
+  const mapsUrl = buildExternalMapUrl("google", {
+    latitude: addressForm.latitude,
+    longitude: addressForm.longitude,
+    label: place.name,
+    addressLine1: addressForm.addressLine1,
+    city: addressForm.city,
+    province: addressForm.province,
+    postalCode: addressForm.postalCode,
+    googlePlaceId: addressDirty ? null : place.googlePlaceId,
+  });
   const openFlags = place.flags.filter((flag) => flag.status === "open");
   const reviewedFlags = place.flags.filter((flag) => flag.status !== "open");
 
@@ -466,11 +476,13 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
                 Public page
               </Button>
             </Link>
-            <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="sm">
-                Open in Maps
-              </Button>
-            </a>
+            {mapsUrl ? (
+              <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm">
+                  Open in Maps
+                </Button>
+              </a>
+            ) : null}
           </div>
         </div>
         {saveError ? (
@@ -687,6 +699,11 @@ export function AdminPlaceDetailView({ placeId }: { placeId: string }) {
                   <MetadataItem
                     label="External place ID"
                     value={place.externalPlaceId ?? "—"}
+                    mono
+                  />
+                  <MetadataItem
+                    label="Google Place ID"
+                    value={place.googlePlaceId ?? "—"}
                     mono
                   />
                   <MetadataItem
