@@ -169,7 +169,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run test:integration` | Run transactional workflow tests against local/disposable Supabase |
 | `npm run test:e2e` | Run public mobile/a11y/discovery/security checks and the fixture-backed critical path |
 | `npm run test:architecture` | Assert built public routes are prerendered and private routes remain dynamic |
-| `npm run test:lighthouse` | Check production-build performance, accessibility, best-practice, and SEO budgets |
+| `npm run test:lighthouse` | Run three samples per route, enforce median Lighthouse budgets, and retain reports outside the repository |
 | `npm run baseline:api` | Record API latency, cache headers, and `Server-Timing` |
 | `npm run replace:rewards-canada` | Validate and preview the reviewed seed replacement |
 | `npm run replace:rewards-canada -- --apply --replace` | Atomically replace the reviewed seed |

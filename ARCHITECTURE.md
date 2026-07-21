@@ -238,7 +238,7 @@ D1-D3 completion does not authorize production release. D4 owns release acceptan
 
 Stage C is complete in code and D1-D3 are implemented on `stage-D`. The following are the canonical D4 operational release gates, not unfinished Stage C feature work:
 
-- [ ] Confirm the release commit passes lint, typecheck, unit tests, production build, architecture assertions, Lighthouse budgets, live RLS/integration suites, and the fixture-backed E2E workflow. Treat an isolated Lighthouse failure as a signal to rerun and investigate, not as permission to lower the budget.
+- [ ] Confirm the release commit passes lint, typecheck, unit tests, production build, architecture assertions, Lighthouse budgets, live RLS/integration suites, and the fixture-backed E2E workflow. Lighthouse uses three independent samples per route, gates on the median without lowering the budget, and retains JSON/HTML evidence for every sample.
 - [ ] Apply every migration through `20260720190000_google_place_ids.sql` to the intended Supabase project and record the migration status. Preview and review Google Place ID matches before any `--write` backfill. The 2026-07-14 hosted verification predates the transactional, privacy, and Place ID migrations.
 - [ ] Create a Vercel Preview with `/deploy`, run `/performance <preview_url> 30`, and retain the workflow links. Check CDN warm latency separately from the origin probe and inspect `Server-Timing` for Redis/database regressions.
 - [ ] Smoke-test sign-in, map/search, Google Maps/Apple Maps destinations, Place ID fallback behavior, geocoding, report submission/removal, moderation, account export/deletion, and mutation-driven cache invalidation against disposable fixtures or the intended environment.

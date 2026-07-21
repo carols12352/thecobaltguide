@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import process from "node:process";
 import * as chromeLauncher from "chrome-launcher";
 import lighthouse from "lighthouse";
@@ -6,6 +9,13 @@ import lighthouse from "lighthouse";
 const port = Number.parseInt(process.env.LIGHTHOUSE_PORT ?? "3001", 10);
 const origin = `http://127.0.0.1:${port}`;
 const routes = ["/", "/about"];
+const sampleCount = Math.max(
+  1,
+  Number.parseInt(process.env.LIGHTHOUSE_RUNS ?? "3", 10) || 3,
+);
+const artifactDirectory =
+  process.env.LIGHTHOUSE_ARTIFACT_DIR ??
+  path.join(os.tmpdir(), "thecobaltguide-lighthouse");
 const budgets = {
   performance: 0.7,
   accessibility: 0.9,
@@ -48,32 +58,94 @@ let serverOutput = "";
 server.stdout.on("data", (chunk) => { serverOutput += chunk.toString(); });
 server.stderr.on("data", (chunk) => { serverOutput += chunk.toString(); });
 
-let chrome;
 try {
   await waitForServer();
-  chrome = await chromeLauncher.launch({
-    chromeFlags: ["--headless=new", "--no-sandbox"],
-  });
+  await mkdir(artifactDirectory, { recursive: true });
 
   const failures = [];
+  const summary = [];
   for (const route of routes) {
-    const result = await lighthouse(`${origin}${route}`, {
-      port: chrome.port,
-      logLevel: "error",
-      output: "json",
-      onlyCategories: Object.keys(budgets),
-    });
-    if (!result) throw new Error(`Lighthouse returned no result for ${route}.`);
+    const routeSlug = route === "/" ? "home" : route.slice(1).replaceAll("/", "-");
+    const samples = [];
 
-    const scores = Object.fromEntries(
+    for (let sample = 1; sample <= sampleCount; sample += 1) {
+      const chrome = await chromeLauncher.launch({
+        chromeFlags: ["--headless=new", "--no-sandbox"],
+      });
+
+      try {
+        const result = await lighthouse(`${origin}${route}`, {
+          port: chrome.port,
+          logLevel: "error",
+          output: ["json", "html"],
+          onlyCategories: Object.keys(budgets),
+        });
+        if (!result) {
+          throw new Error(`Lighthouse returned no result for ${route}, sample ${sample}.`);
+        }
+
+        const reports = Array.isArray(result.report)
+          ? result.report
+          : [result.report];
+        await Promise.all([
+          writeFile(
+            path.join(artifactDirectory, `${routeSlug}-${sample}.json`),
+            reports[0],
+          ),
+          writeFile(
+            path.join(artifactDirectory, `${routeSlug}-${sample}.html`),
+            reports[1] ?? "",
+          ),
+        ]);
+
+        const scores = Object.fromEntries(
+          Object.keys(budgets).map((category) => [
+            category,
+            result.lhr.categories[category]?.score ?? 0,
+          ]),
+        );
+        const metrics = Object.fromEntries(
+          [
+            ["fcp", "first-contentful-paint"],
+            ["lcp", "largest-contentful-paint"],
+            ["speedIndex", "speed-index"],
+            ["tbt", "total-blocking-time"],
+            ["cls", "cumulative-layout-shift"],
+          ].map(([label, auditId]) => [
+            label,
+            Math.round((result.lhr.audits[auditId]?.numericValue ?? 0) * 100) /
+              100,
+          ]),
+        );
+        const sampleResult = { sample, scores, metrics };
+        samples.push(sampleResult);
+        console.log(`${route} sample ${sample} ${JSON.stringify(sampleResult)}`);
+      } finally {
+        await chrome.kill();
+      }
+    }
+
+    const medianScores = Object.fromEntries(
       Object.entries(budgets).map(([category, minimum]) => {
-        const score = result.lhr.categories[category]?.score ?? 0;
-        if (score < minimum) failures.push(`${route} ${category}: ${score} < ${minimum}`);
-        return [category, Math.round(score * 100)];
+        const ordered = samples
+          .map(({ scores }) => scores[category] ?? 0)
+          .sort((left, right) => left - right);
+        const median = ordered[Math.floor(ordered.length / 2)] ?? 0;
+        if (median < minimum) {
+          failures.push(`${route} ${category} median: ${median} < ${minimum}`);
+        }
+        return [category, Math.round(median * 100)];
       }),
     );
-    console.log(`${route} ${JSON.stringify(scores)}`);
+    summary.push({ route, samples, medianScores });
+    console.log(`${route} median ${JSON.stringify(medianScores)}`);
   }
+
+  await writeFile(
+    path.join(artifactDirectory, "summary.json"),
+    `${JSON.stringify({ sampleCount, budgets, routes: summary }, null, 2)}\n`,
+  );
+  console.log(`Lighthouse reports: ${artifactDirectory}`);
 
   if (failures.length) throw new Error(`Lighthouse budgets failed:\n${failures.join("\n")}`);
 } catch (error) {
@@ -82,6 +154,5 @@ try {
   }
   throw error;
 } finally {
-  await chrome?.kill();
   stopServer(server);
 }
