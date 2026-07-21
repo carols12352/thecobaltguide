@@ -18,8 +18,18 @@ const sections: LegalSection[] = [
     content: (
       <>
         <p>We collect information that you provide directly, including your email address, authentication details, optional profile information, merchant submissions, multiplier reports, transaction dates, purchase context, notes, and content flags.</p>
-        <p>We also process limited technical information needed to operate and secure the service. This may include authentication session data, request timestamps, IP addresses used for rate limiting and abuse prevention, device or browser information present in ordinary server logs, and local preferences stored in your browser.</p>
+        <p>We also process limited technical information needed to operate, secure, and measure the performance of the service. This may include authentication session data, request timestamps, IP addresses used for rate limiting and abuse prevention, device or browser information present in ordinary server logs, and local preferences stored in your browser.</p>
         <p>Public merchant contributions may identify a place and transaction context, but users should not include card numbers, receipts, account credentials, or other sensitive personal information in free-text fields.</p>
+      </>
+    ),
+  },
+  {
+    id: "performance-measurement",
+    title: "Performance measurement",
+    content: (
+      <>
+        <p>We use Vercel Speed Insights to understand how quickly and reliably the site loads and responds. It reports anonymous Web Vitals together with limited technical context such as the visited route or path, browser, device type, operating system, approximate country, network speed, metric attribution, SDK version, and event time.</p>
+        <p>Vercel states that Speed Insights does not store information that identifies an individual visitor or allows a browsing session to be reconstructed across pages. We use these measurements only to diagnose performance and improve the service; merchant reports, account email addresses, notes, and authentication credentials are not included in Speed Insights events. See <a href="https://vercel.com/docs/speed-insights/privacy-policy" target="_blank" rel="noopener noreferrer" className="font-medium text-cobalt-700 underline underline-offset-4 dark:text-cobalt-300">Vercel&apos;s Speed Insights privacy information</a> for details.</p>
       </>
     ),
   },
@@ -28,7 +38,7 @@ const sections: LegalSection[] = [
     title: "How we use information",
     content: (
       <>
-        <p>We use information to provide accounts and authentication; display and aggregate community merchant reports; maintain confidence and reputation signals; prevent spam and misuse; review flags; respond to support, privacy, and security requests; and maintain the reliability of the service.</p>
+        <p>We use information to provide accounts and authentication; display and aggregate community merchant reports; maintain confidence and reputation signals; prevent spam and misuse; review flags; measure and improve site performance; respond to support, privacy, and security requests; and maintain the reliability of the service.</p>
         <p>We do not sell personal information. The current service does not use personal information for behavioural advertising or automated decisions that produce legal or similarly significant effects.</p>
       </>
     ),
@@ -48,7 +58,7 @@ const sections: LegalSection[] = [
     title: "Service providers",
     content: (
       <>
-        <p>We rely on service providers to operate the application. These may include Supabase for authentication and database services, Upstash for caching and rate limiting, a hosting provider, Google when you choose Google sign-in, map tile providers such as OpenFreeMap or a configured alternative, and geocoding providers such as Mapbox and OpenStreetMap-based services.</p>
+        <p>We rely on service providers to operate the application. These may include Supabase for authentication and database services, Upstash for caching and rate limiting, Vercel for hosting and anonymous performance measurement, Google when you choose Google sign-in, map tile providers such as OpenFreeMap or a configured alternative, and geocoding providers such as Mapbox and OpenStreetMap-based services.</p>
         <p>These providers may process information in other jurisdictions and under their own privacy terms. We disclose only the information reasonably needed for the relevant service, subject to configuration and operational requirements.</p>
       </>
     ),
@@ -101,7 +111,7 @@ export default function PrivacyPage() {
       eyebrow="Legal"
       title="Privacy Policy"
       summary="This policy describes the limited information the service needs, why it is used, and the choices available to users."
-      effectiveDate="July 14, 2026"
+      effectiveDate="July 20, 2026"
       sections={sections}
     />
   );
