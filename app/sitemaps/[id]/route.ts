@@ -1,9 +1,8 @@
-import type { MetadataRoute } from "next";
 import { getSiteUrl } from "@/lib/site";
 import {
+  buildSitemapUrlSet,
   buildStaticSitemap,
   provinceFromSitemapId,
-  SITEMAP_IDS,
 } from "@/lib/sitemap";
 import {
   latestSitemapModification,
@@ -11,32 +10,37 @@ import {
 import { placeRepository } from "@/server/repositories/place-repository";
 
 export const revalidate = 86_400;
-export const dynamicParams = false;
 
-export function generateSitemaps() {
-  return SITEMAP_IDS.map((id) => ({ id }));
-}
-
-export default async function sitemap({
-  id,
-}: {
-  id: Promise<string>;
-}): Promise<MetadataRoute.Sitemap> {
-  const sitemapId = await id;
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const sitemapId = id.endsWith(".xml") ? id.slice(0, -4) : "";
   const siteUrl = getSiteUrl();
 
   if (sitemapId === "static") {
-    return buildStaticSitemap(siteUrl);
+    return xmlResponse(buildSitemapUrlSet(buildStaticSitemap(siteUrl)));
   }
 
   const province = provinceFromSitemapId(sitemapId);
   if (!province) {
-    throw new Error(`Unknown sitemap province: ${sitemapId}`);
+    return new Response("Not found", { status: 404 });
   }
 
   const places = await placeRepository.findActiveForSitemap(province);
-  return places.map((place) => ({
+  const entries = places.map((place) => ({
     url: new URL(`/place/${place.id}`, siteUrl).toString(),
     lastModified: latestSitemapModification(place),
   }));
+
+  return xmlResponse(buildSitemapUrlSet(entries));
+}
+
+function xmlResponse(xml: string): Response {
+  return new Response(xml, {
+    headers: {
+      "Content-Type": "application/xml; charset=utf-8",
+    },
+  });
 }

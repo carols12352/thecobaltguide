@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createPublicClient } from "@/lib/supabase/public";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeMerchantName } from "@/lib/utils";
 import { placeCardRepository } from "@/server/repositories/place-card-repository";
@@ -54,7 +54,7 @@ export function latestSitemapModification(place: SitemapPlaceRow): string {
 
 export class PublicPlaceRepository {
   async findActiveForSitemap(province: string): Promise<SitemapPlaceRow[]> {
-    const supabase = createAdminClient();
+    const supabase = createPublicClient();
 
     return collectSitemapPages(async (afterId) => {
       let query = supabase

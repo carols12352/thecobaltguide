@@ -45,7 +45,7 @@ export function buildStaticSitemap(siteUrl: URL): MetadataRoute.Sitemap {
 }
 
 export function sitemapUrl(siteUrl: URL, id: string): string {
-  return new URL(`/sitemaps/sitemap/${id}.xml`, siteUrl).toString();
+  return new URL(`/sitemaps/${id}.xml`, siteUrl).toString();
 }
 
 export function buildSitemapIndex(siteUrl: URL): string {
@@ -58,6 +58,26 @@ export function buildSitemapIndex(siteUrl: URL): string {
     '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     entries,
     "</sitemapindex>",
+  ].join("");
+}
+
+export function buildSitemapUrlSet(entries: MetadataRoute.Sitemap): string {
+  const urls = entries.map((entry) => {
+    const lastModified = entry.lastModified
+      ? `<lastmod>${escapeXml(
+          entry.lastModified instanceof Date
+            ? entry.lastModified.toISOString()
+            : entry.lastModified,
+        )}</lastmod>`
+      : "";
+    return `<url><loc>${escapeXml(entry.url)}</loc>${lastModified}</url>`;
+  }).join("");
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    urls,
+    "</urlset>",
   ].join("");
 }
 

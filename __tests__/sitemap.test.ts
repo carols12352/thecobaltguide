@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildSitemapIndex,
   buildStaticSitemap,
+  buildSitemapUrlSet,
   CANADIAN_PROVINCE_CODES,
   provinceFromSitemapId,
   SITEMAP_IDS,
@@ -34,7 +35,7 @@ describe("sitemap configuration", () => {
     expect(xml).toContain('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
     for (const id of SITEMAP_IDS) {
       expect(xml).toContain(
-        `<loc>https://example.com/sitemaps/sitemap/${id}.xml</loc>`,
+        `<loc>https://example.com/sitemaps/${id}.xml</loc>`,
       );
     }
     expect(xml.match(/<sitemap>/g)).toHaveLength(SITEMAP_IDS.length);
@@ -52,6 +53,23 @@ describe("sitemap configuration", () => {
     ]);
     expect(provinceFromSitemapId("on")).toBe("ON");
     expect(provinceFromSitemapId("invalid")).toBeNull();
+  });
+
+  it("serializes static and modified URLs as a valid sitemap document", () => {
+    const xml = buildSitemapUrlSet([
+      { url: "https://example.com/" },
+      {
+        url: "https://example.com/place/one?view=full&source=map",
+        lastModified: "2026-07-23T00:00:00Z",
+      },
+    ]);
+
+    expect(xml).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
+    expect(xml).toContain("<loc>https://example.com/</loc>");
+    expect(xml).toContain(
+      "<loc>https://example.com/place/one?view=full&amp;source=map</loc>",
+    );
+    expect(xml).toContain("<lastmod>2026-07-23T00:00:00Z</lastmod>");
   });
 });
 
