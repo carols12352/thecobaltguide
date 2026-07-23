@@ -1,22 +1,76 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createPublicClient } from "@/lib/supabase/public";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeMerchantName } from "@/lib/utils";
 import { placeCardRepository } from "@/server/repositories/place-card-repository";
 import { projectMapPlace, projectPlaceDetail } from "@/server/repositories/place-projections";
 import type { MapPlace, PlaceDetail } from "@/types/domain";
 
+export type SitemapPlaceRow = {
+  id: string;
+  updated_at: string;
+  place_multiplier_summaries:
+    | { updated_at: string }[]
+    | { updated_at: string }
+    | null;
+};
+
+const SITEMAP_PAGE_SIZE = 1_000;
+
+export async function collectSitemapPages(
+  fetchPage: (afterId: string | null) => Promise<SitemapPlaceRow[]>,
+): Promise<SitemapPlaceRow[]> {
+  const places: SitemapPlaceRow[] = [];
+  let afterId: string | null = null;
+
+  while (true) {
+    const page = await fetchPage(afterId);
+    if (page.length === 0) return places;
+
+    const nextAfterId = page.at(-1)?.id;
+    if (!nextAfterId || nextAfterId === afterId) {
+      throw new Error("Sitemap pagination did not advance");
+    }
+
+    places.push(...page);
+    afterId = nextAfterId;
+  }
+}
+
+export function latestSitemapModification(place: SitemapPlaceRow): string {
+  const summaries = Array.isArray(place.place_multiplier_summaries)
+    ? place.place_multiplier_summaries
+    : place.place_multiplier_summaries
+      ? [place.place_multiplier_summaries]
+      : [];
+
+  return summaries.reduce(
+    (latest, summary) =>
+      new Date(summary.updated_at).getTime() > new Date(latest).getTime()
+        ? summary.updated_at
+        : latest,
+    place.updated_at,
+  );
+}
+
 export class PublicPlaceRepository {
-  async findActiveForSitemap(limit = 10_000) {
-    const supabase = createAdminClient();
-    const boundedLimit = Math.min(10_000, Math.max(1, limit));
-    const { data, error } = await supabase
-      .from("places")
-      .select("id, updated_at")
-      .eq("status", "active")
-      .order("updated_at", { ascending: false })
-      .limit(boundedLimit);
-    if (error) throw error;
-    return data ?? [];
+  async findActiveForSitemap(province: string): Promise<SitemapPlaceRow[]> {
+    const supabase = createPublicClient();
+
+    return collectSitemapPages(async (afterId) => {
+      let query = supabase
+        .from("places")
+        .select("id, updated_at, place_multiplier_summaries(updated_at)")
+        .eq("status", "active")
+        .eq("province", province)
+        .order("id", { ascending: true })
+        .limit(SITEMAP_PAGE_SIZE);
+
+      if (afterId) query = query.gt("id", afterId);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as SitemapPlaceRow[];
+    });
   }
 
   async search(query: string, limit = 20): Promise<MapPlace[]> {

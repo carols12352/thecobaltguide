@@ -10,8 +10,15 @@ test("public discovery routes expose crawler metadata", async ({ request }) => {
   const sitemap = await request.get("/sitemap.xml");
   expect(sitemap.ok()).toBe(true);
   const sitemapBody = await sitemap.text();
-  expect(sitemapBody).toMatch(/<loc>https?:\/\/[^<]+\/<\/loc>/);
-  expect(sitemapBody).toContain("/map</loc>");
+  expect(sitemapBody).toContain("<sitemapindex");
+  expect(sitemapBody).toContain("/sitemaps/static.xml</loc>");
+  expect(sitemapBody).toContain("/sitemaps/on.xml</loc>");
+
+  const staticSitemap = await request.get("/sitemaps/static.xml");
+  expect(staticSitemap.ok()).toBe(true);
+  const staticSitemapBody = await staticSitemap.text();
+  expect(staticSitemapBody).toMatch(/<loc>https?:\/\/[^<]+\/<\/loc>/);
+  expect(staticSitemapBody).toContain("/map</loc>");
 });
 
 test("home remains usable on a narrow viewport without horizontal overflow", async ({
