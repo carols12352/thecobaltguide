@@ -1,5 +1,31 @@
 import { expect, test } from "@playwright/test";
 
+test("login hydrates cleanly with a stored last-used method", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await page.goto("/login");
+  await page.evaluate(() => {
+    window.localStorage.setItem("cobalt-last-used-auth-method", "google");
+  });
+  await page.reload();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem("cobalt-last-used-auth-method"),
+      ),
+    )
+    .toBe("google");
+  expect(
+    browserErrors.filter((message) => message.includes("Hydration failed")),
+  ).toEqual([]);
+  await expect(page.getByText("Last used", { exact: true })).toBeVisible();
+});
+
 test("public discovery routes expose crawler metadata", async ({ request }) => {
   const robots = await request.get("/robots.txt");
   expect(robots.ok()).toBe(true);
