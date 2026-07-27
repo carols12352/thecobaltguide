@@ -3,6 +3,7 @@ import type {
   AdminPlaceDetail,
   MapPlace,
   PlaceDetail,
+  PlaceSource,
   PlaceSummary,
 } from "@/types/domain";
 
@@ -28,6 +29,10 @@ function multiplier(value: unknown): MapPlace["multiplier"] {
   return value ? (parseInt(value as string, 10) as MapPlace["multiplier"]) : null;
 }
 
+function placeSource(value: unknown): PlaceSource {
+  return value === "rewards_canada" ? "rewards_canada" : "community";
+}
+
 export function projectViewportPlace(row: Record<string, unknown>): MapPlace {
   return {
     id: row.id as string,
@@ -42,6 +47,7 @@ export function projectViewportPlace(row: Record<string, unknown>): MapPlace {
     recentReportCount: (row.recent_report_count as number) ?? 0,
     lastReportedAt: (row.last_reported_at as string) ?? null,
     category: row.category as string,
+    sourceKind: placeSource(row.source_kind),
   };
 }
 
@@ -69,6 +75,7 @@ export function projectMapPlace(
     confidenceLevel: summary?.confidence_level ?? "insufficient",
     recentReportCount: summary?.recent_report_count ?? 0,
     lastReportedAt: summary?.last_reported_at ?? null,
+    sourceKind: placeSource(place.source_kind),
   };
 }
 
@@ -109,6 +116,7 @@ export function projectPlaceDetail(
     brandId: place.brand_id as string | null,
     brandName: brand?.name ?? null,
     googlePlaceId: place.google_place_id as string | null,
+    sourceKind: placeSource(place.source_kind),
     summary: placeSummary,
   };
 }

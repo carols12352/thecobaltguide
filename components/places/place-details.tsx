@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ExternalMapLinks } from "@/components/map/external-map-links";
+import { RewardsCanadaBadge } from "@/components/places/rewards-canada-badge";
 import { getCategoryLabel } from "@/config/categories";
 import { formatConfidence, formatDate, formatMultiplier, formatPlaceAddress } from "@/lib/utils";
 import { formatPlaceReportGroupLabel } from "@/lib/reports/place-report-groups";
@@ -35,6 +36,9 @@ export function PlaceDetails({ place }: { place: PlaceDetail }) {
               {place.acceptsAmex ? "Accepts Amex" : "Amex not accepted"}
             </Badge>
           )}
+          {place.sourceKind === "rewards_canada" ? (
+            <RewardsCanadaBadge />
+          ) : null}
         </div>
         <ExternalMapLinks
           latitude={place.latitude}

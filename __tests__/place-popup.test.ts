@@ -16,6 +16,7 @@ const samplePlace: MapPlace = {
   confidenceLevel: "high",
   recentReportCount: 2,
   lastReportedAt: null,
+  sourceKind: "rewards_canada",
 };
 
 describe("place popup", () => {
@@ -31,6 +32,9 @@ describe("place popup", () => {
 
     expect(html).toContain("place-popup-pill-multiplier");
     expect(html).toContain("place-popup-pill-success");
+    expect(html).toContain("place-popup-source-dot");
+    expect(html).toContain('aria-label="Source: Rewards Canada"');
+    expect(html).toContain("Rewards Canada");
     expect(html).toContain("Something wrong?");
     expect(html).toContain('href="/place/abc-123"');
     expect(html).toContain(">Report</a>");
@@ -54,5 +58,15 @@ describe("place popup", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain("%3Cscript%3E");
+  });
+
+  it("omits the source badge for community places", () => {
+    const html = buildPlacePopupHtml({
+      ...samplePlace,
+      sourceKind: "community",
+    });
+
+    expect(html).not.toContain("place-popup-source-dot");
+    expect(html).not.toContain('aria-label="Source: Rewards Canada"');
   });
 });

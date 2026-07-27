@@ -151,7 +151,7 @@ export class PublicMapPlaceRepository {
       let query = supabase
         .from("places")
         .select(`
-          id, name, address_line1, city, province, category, location,
+          id, name, address_line1, city, province, category, source_kind, location,
           place_multiplier_summaries!inner (
             current_multiplier, confidence_level,
             recent_report_count, last_reported_at
@@ -172,7 +172,7 @@ export class PublicMapPlaceRepository {
     let query = supabase
       .from("places")
       .select(`
-        id, name, address_line1, city, province, category, location,
+        id, name, address_line1, city, province, category, source_kind, location,
         place_multiplier_summaries (
           current_multiplier, confidence_level,
           recent_report_count, last_reported_at, card_product_id

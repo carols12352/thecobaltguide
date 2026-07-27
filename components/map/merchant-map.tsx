@@ -69,6 +69,7 @@ function placesToGeoJSON(places: MapPlace[]): GeoJSON.FeatureCollection {
         multiplier: place.multiplier ?? "?",
         confidenceLevel: place.confidenceLevel,
         recentReportCount: place.recentReportCount,
+        sourceKind: place.sourceKind,
       },
     })),
   };

@@ -37,6 +37,9 @@ export function buildPlacePopupHtml(place: MapPlace): string {
   const reportsLabel = escapeHtml(
     `${place.recentReportCount} recent report${place.recentReportCount === 1 ? "" : "s"}`,
   );
+  const sourceBadge = place.sourceKind === "rewards_canada"
+    ? '<span class="place-popup-pill place-popup-pill-muted" aria-label="Source: Rewards Canada"><span class="place-popup-source-dot" aria-hidden="true"></span>Rewards Canada</span>'
+    : "";
   const mapLinks = buildExternalMapLinks({
     latitude: place.latitude,
     longitude: place.longitude,
@@ -59,6 +62,7 @@ export function buildPlacePopupHtml(place: MapPlace): string {
         <span class="place-popup-pill place-popup-pill-multiplier">${multiplier}</span>
         <span class="place-popup-pill ${confidenceClass}">${confidence}</span>
         <span class="place-popup-pill place-popup-pill-muted">${reportsLabel}</span>
+        ${sourceBadge}
       </div>
       ${mapLinks ? `<nav class="place-popup-map-links" aria-label="Open ${name} in an external map">${mapLinks}</nav>` : ""}
       <p class="place-popup-footer">
@@ -110,5 +114,7 @@ export function placeFromGeoJsonFeature(
       "insufficient") as MapPlace["confidenceLevel"],
     recentReportCount: Number(props.recentReportCount ?? 0),
     lastReportedAt: null,
+    sourceKind:
+      props.sourceKind === "rewards_canada" ? "rewards_canada" : "community",
   };
 }

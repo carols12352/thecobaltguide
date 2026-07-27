@@ -40,7 +40,7 @@ describe("cache keys", () => {
     });
 
     expect(keyA).toBe(keyB);
-    expect(keyA).toContain("cobalt:cache:map:v1:1:grid:");
+    expect(keyA).toContain("cobalt:cache:map:v2:1:grid:");
   });
 
   it("changes map cache keys when version bumps", () => {
@@ -53,7 +53,7 @@ describe("cache keys", () => {
   });
 
   it("builds place cache keys", () => {
-    expect(placeCacheKey("abc-123")).toBe("cobalt:cache:place:v1:abc-123");
+    expect(placeCacheKey("abc-123")).toBe("cobalt:cache:place:v2:abc-123");
   });
 
   it("builds stable admin places cache keys", () => {

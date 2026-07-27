@@ -28,7 +28,7 @@ describe("place cache invalidation", () => {
   it("bumps both global versions and deletes the requested place detail", async () => {
     await expect(invalidatePlaceReadCaches("seed-replacement")).resolves.toBe(true);
     expect(redisMocks.cacheDel).toHaveBeenCalledWith(
-      "cobalt:cache:place:v1:seed-replacement",
+      "cobalt:cache:place:v2:seed-replacement",
     );
     expect(redisMocks.cacheBumpVersion).toHaveBeenCalledTimes(2);
   });

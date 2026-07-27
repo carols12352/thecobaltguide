@@ -23,6 +23,7 @@ export class PlaceWriteRepository {
       external_place_id: input.externalPlaceId ?? null,
       google_place_id: googlePlaceId ?? null,
       brand_id: input.brandId ?? null,
+      source_kind: "community",
       created_by: userId,
     }).select("id").single();
     if (error) throw error;
