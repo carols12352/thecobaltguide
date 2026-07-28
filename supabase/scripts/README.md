@@ -24,6 +24,9 @@ The apply path requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` in
 one PostgreSQL transaction to replace the seed. Failed staging uploads or a
 failed transaction do not delete the existing seed.
 
+Imported physical places are marked with `source_kind = 'rewards_canada'`.
+Community-submitted places retain the database default `community`.
+
 By default, replacement deletes only rows whose external identifiers start
 with `rewards-canada:`. To intentionally replace every existing map place:
 

@@ -79,7 +79,7 @@ export class PublicPlaceRepository {
     const { data, error } = await supabase
       .from("places")
       .select(`
-        id, name, address_line1, city, province, category, location,
+        id, name, address_line1, city, province, category, source_kind, location,
         place_multiplier_summaries (
           current_multiplier, confidence_level,
           recent_report_count, last_reported_at

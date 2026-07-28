@@ -1,5 +1,67 @@
 import { expect, test } from "@playwright/test";
 
+test("map search shows Rewards Canada provenance", async ({ page }) => {
+  await page.route("**/api/places/search?**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        places: [
+          {
+            id: "rewards-canada-place",
+            name: "Source Test Market",
+            addressLine1: "1 King St",
+            city: "Toronto",
+            province: "ON",
+            latitude: 43.65,
+            longitude: -79.38,
+            multiplier: 5,
+            confidenceLevel: "high",
+            recentReportCount: 0,
+            lastReportedAt: null,
+            category: "grocery",
+            sourceKind: "rewards_canada",
+          },
+        ],
+      }),
+    }),
+  );
+
+  await page.goto("/map");
+  await page.getByLabel("Search merchants").fill("Source Test Market");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+
+  await expect(page.getByText("Source Test Market", { exact: true })).toBeVisible();
+  await expect(
+    page.getByLabel("Source: Rewards Canada"),
+  ).toBeVisible();
+});
+
+test("login hydrates cleanly with a stored last-used method", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await page.goto("/login");
+  await page.evaluate(() => {
+    window.localStorage.setItem("cobalt-last-used-auth-method", "google");
+  });
+  await page.reload();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem("cobalt-last-used-auth-method"),
+      ),
+    )
+    .toBe("google");
+  expect(
+    browserErrors.filter((message) => message.includes("Hydration failed")),
+  ).toEqual([]);
+  await expect(page.getByText("Last used", { exact: true })).toBeVisible();
+});
+
 test("public discovery routes expose crawler metadata", async ({ request }) => {
   const robots = await request.get("/robots.txt");
   expect(robots.ok()).toBe(true);

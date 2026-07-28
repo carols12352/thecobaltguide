@@ -103,4 +103,6 @@ The Stage A RLS/privilege hardening, transactional write boundary, Rewards
 Canada coverage schema, atomic seed replacement, and cascade consistency fix
 are recorded in migrations `20260714120000` through `20260715150000`. The
 replacement staging tables and RPC are service-role-only and are not an
-application-runtime import path.
+application-runtime import path. Place provenance is recorded explicitly by
+`20260727120000_place_source_kind.sql`; it marks the existing catalogue as
+Rewards Canada data while keeping future community submissions distinct.

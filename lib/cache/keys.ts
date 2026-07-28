@@ -15,7 +15,7 @@ export function mapCacheKey(
   },
 ): string {
   const parts = [
-    "cobalt:cache:map:v1",
+    "cobalt:cache:map:v2",
     version,
     "grid",
     params.gridKey,
@@ -28,7 +28,7 @@ export function mapCacheKey(
 }
 
 export function placeCacheKey(placeId: string): string {
-  return `cobalt:cache:place:v1:${placeId}`;
+  return `cobalt:cache:place:v2:${placeId}`;
 }
 
 export function searchCacheKey(
@@ -36,7 +36,7 @@ export function searchCacheKey(
   query: string,
   limit: number,
 ): string {
-  return `cobalt:cache:search:v1:${version}:${normalizeMerchantName(query)}:${limit}`;
+  return `cobalt:cache:search:v2:${version}:${normalizeMerchantName(query)}:${limit}`;
 }
 
 export function cityCountCacheKey(
@@ -75,7 +75,7 @@ export function cityMapCacheKey(
   const city = params.city.trim().toLowerCase();
   const province = params.province.trim().toUpperCase();
   return [
-    "cobalt:cache:city-map:v1",
+    "cobalt:cache:city-map:v2",
     version,
     province,
     city,
@@ -101,7 +101,7 @@ export function viewportDetailsCacheKey(
   },
 ): string {
   return [
-    "cobalt:cache:viewport-details:v1",
+    "cobalt:cache:viewport-details:v2",
     version,
     params.viewGridKey,
     params.zoom ?? "all",

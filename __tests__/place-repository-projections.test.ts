@@ -23,6 +23,7 @@ describe("place repository projection contracts", () => {
       recent_report_count: 4,
       last_reported_at: "2026-07-01",
       category: "grocery",
+      source_kind: "rewards_canada",
     })).toEqual({
       id: "place-1",
       name: "Market",
@@ -36,6 +37,7 @@ describe("place repository projection contracts", () => {
       recentReportCount: 4,
       lastReportedAt: "2026-07-01",
       category: "grocery",
+      sourceKind: "rewards_canada",
     });
   });
 
@@ -44,6 +46,7 @@ describe("place repository projection contracts", () => {
       id: "place-2",
       name: "Cafe",
       category: "restaurant",
+      source_kind: "community",
       location: { type: "Point", coordinates: [-79.4, 43.7] },
       place_multiplier_summaries: [
         { card_product_id: "other", current_multiplier: "2" },
@@ -64,6 +67,7 @@ describe("place repository projection contracts", () => {
       multiplier: 5,
       confidenceLevel: "recently_confirmed",
       recentReportCount: 3,
+      sourceKind: "community",
     });
   });
 
@@ -82,6 +86,7 @@ describe("place repository projection contracts", () => {
       status: "active",
       brand_id: "brand-1",
       google_place_id: "google-place-3",
+      source_kind: "rewards_canada",
       merchant_brands: { name: "Deli Group" },
     }, {
       current_multiplier: "5",
@@ -102,6 +107,7 @@ describe("place repository projection contracts", () => {
       googlePlaceId: "google-place-3",
       latitude: 43.65,
       longitude: -79.38,
+      sourceKind: "rewards_canada",
       summary: { currentMultiplier: 5, confidenceLevel: "high", score5x: 8.5 },
     });
   });

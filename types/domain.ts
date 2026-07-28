@@ -1,5 +1,6 @@
 export type UserRole = "user" | "moderator" | "admin";
 export type UserStatus = "active" | "suspended";
+export type PlaceSource = "community" | "rewards_canada";
 export type PlaceStatus = "active" | "permanently_closed" | "merged";
 export type ReportStatus = "active" | "removed" | "flagged";
 export type ReportKind = "new_location" | "error" | "update" | "confirm";
@@ -44,6 +45,7 @@ export interface MapPlace {
   recentReportCount: number;
   lastReportedAt: string | null;
   category?: string;
+  sourceKind: PlaceSource;
   distanceMetres?: number;
 }
 
@@ -71,6 +73,7 @@ export interface PlaceDetail {
   brandId: string | null;
   brandName: string | null;
   googlePlaceId: string | null;
+  sourceKind: PlaceSource;
   summary: PlaceSummary | null;
 }
 

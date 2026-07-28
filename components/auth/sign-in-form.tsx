@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthDivider, AuthShell, GoogleIcon } from "@/components/auth/auth-shell";
@@ -40,12 +40,9 @@ function getRedirectPath(searchParams: URLSearchParams): string {
 export function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mode, setMode] = useState<SignInMode>(() => {
-    const method = getLastUsedAuthMethod();
-    return method === "magic_link" ? "magic_link" : "password";
-  });
+  const [mode, setMode] = useState<SignInMode>("password");
   const [lastUsedMethod, setLastUsedMethodState] =
-    useState<LastUsedAuthMethod | null>(() => getLastUsedAuthMethod());
+    useState<LastUsedAuthMethod | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(
@@ -60,6 +57,16 @@ export function SignInForm() {
   const cooldownRemainingMs = useEmailCooldown(email);
   const cooldownSeconds = formatCooldownSeconds(cooldownRemainingMs);
   const cooldownActive = cooldownRemainingMs > 0;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const method = getLastUsedAuthMethod();
+      setLastUsedMethodState(method);
+      if (method === "magic_link") setMode("magic_link");
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   function rememberMethod(method: LastUsedAuthMethod) {
     setLastUsedAuthMethod(method);

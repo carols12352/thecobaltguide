@@ -202,6 +202,15 @@ textarea {
   color: #52525b;
 }
 
+.place-popup-source-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  flex: none;
+  border-radius: 9999px;
+  background: #3478e5;
+  margin-right: 0.375rem;
+}
+
 .place-popup-map-links {
   display: flex;
   flex-wrap: wrap;

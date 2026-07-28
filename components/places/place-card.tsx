@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { RewardsCanadaBadge } from "@/components/places/rewards-canada-badge";
 import {
   formatConfidence,
   formatDate,
@@ -40,6 +41,9 @@ export function PlaceCard({ place, selected, onSelect }: PlaceCardProps) {
             {place.recentReportCount} recent reports · Last{" "}
             {formatDate(place.lastReportedAt)}
           </p>
+          {place.sourceKind === "rewards_canada" ? (
+            <RewardsCanadaBadge className="mt-2" />
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <Badge variant="default">

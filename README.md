@@ -224,7 +224,7 @@ The repository targets Vercel or another Node.js 22+ host.
 
 See [Preview deployment operations](docs/preview-deployment.md) for command parameters, permissions, required secrets, performance measurement, and troubleshooting.
 
-Before production deployment, apply every migration through `20260720190000_google_place_ids.sql`, run the live database suites in a disposable environment, and verify the map/geocoding/external-navigation critical path. The primary hosted verification recorded on 2026-07-14 predates the transactional, privacy, and Google Place ID migrations and is not sufficient evidence for a new environment.
+Before production deployment, apply every migration through `20260727120000_place_source_kind.sql`, run the live database suites in a disposable environment, and verify the map/geocoding/external-navigation critical path. The primary hosted verification recorded on 2026-07-14 predates the transactional, privacy, Google Place ID, and place-provenance migrations and is not sufficient evidence for a new environment.
 
 ## Data and operational notes
 

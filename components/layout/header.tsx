@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand/brand-mark";
+import { AdminHeaderLink } from "@/components/layout/admin-header-link";
 
 export function Header() {
   return (
@@ -28,6 +29,7 @@ export function Header() {
           >
             About
           </Link>
+          <AdminHeaderLink />
           <Link
             href="/account"
             className="rounded-lg px-2 py-2 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 sm:px-3 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
