@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import type { FeatureCollection } from "geojson";
 import { MAP_DEFAULTS } from "@/config/constants";
 import { DEFAULT_CENTER, getMapStyleUrl } from "@/lib/map/config";
 import { distanceMetres } from "@/lib/map/distance";
